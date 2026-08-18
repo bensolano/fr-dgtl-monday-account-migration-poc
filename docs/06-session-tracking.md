@@ -21,7 +21,10 @@
 *   Tested Discovery logic locally, mocking the paginated API responses and verifying the resulting `local_inventory.json` output structure.
 *   Implemented `src/classification.py` (The Rules Engine) which parses an inventory and tags objects as `full`, `partial`, or `manual_only` based on the capability matrix.
 *   Tested Classification logic locally via `tests/test_classification.py`.
+*   Implemented `src/report_generator.py` to parse a classified inventory and generate a human-readable Markdown summary.
+*   Tested Report Generator locally via `tests/test_report_generator.py`.
 
 **Next Up:**
-*   Implement `src/report_generator.py`.
-*   Consume the classified `local_inventory.json` and generate a human-readable pre-migration markdown report summarizing counts, limits, and caveats.
+*   Build an End-to-End Local Execution Script (`main.py`).
+*   Tie together `DiscoveryEngine` -> `ClassificationEngine` -> `ReportGenerator` into a single runnable flow.
+*   Run the script and manually verify the physical `pre_migration_report.md` output.
