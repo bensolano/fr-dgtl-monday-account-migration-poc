@@ -67,14 +67,13 @@ class ReportGenerator:
                 has_caveats = True
                 lines.append(f"### {obj_type.capitalize()}")
                 for item in items_with_caveats:
-                    name = (
-                        item.get("name")
-                        or item.get("title")
-                        or item.get("id", "Unknown")
-                    )
+                    name = item.get("name") or item.get("title") or "Unknown"
+                    item_id = item.get("id", "N/A")
                     classification = item.get("classification", "unknown").upper()
                     caveat = item.get("caveat")
-                    lines.append(f"- **{name}** `[{classification}]`: {caveat}")
+                    lines.append(
+                        f"- **{name}** (ID: `{item_id}`) `[{classification}]`: {caveat}"
+                    )
                 lines.append("")
 
         if not has_caveats:
@@ -84,6 +83,25 @@ class ReportGenerator:
 
         lines.extend(
             [
+                "",
+                "## 3. Appendix: All Discovered Boards",
+                "",
+                "A complete list of boards discovered during the assessment. Use these IDs to trace exact locations in your Monday account.",
+                "",
+                "| Board Name | Board ID | Classification |",
+                "|---|---|---|",
+            ]
+        )
+
+        for board in inventory.get("boards", []):
+            name = board.get("name", "Unknown")
+            b_id = board.get("id", "N/A")
+            cls = board.get("classification", "unknown").upper()
+            lines.append(f"| {name} | `{b_id}` | {cls} |")
+
+        lines.extend(
+            [
+                "",
                 "---",
                 "*Report generated automatically by the Monday Account Migration Tool.*",
             ]

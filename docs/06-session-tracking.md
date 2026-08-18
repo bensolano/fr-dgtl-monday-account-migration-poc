@@ -23,8 +23,8 @@
 *   Tested Classification logic locally via `tests/test_classification.py`.
 *   Implemented `src/report_generator.py` to parse a classified inventory and generate a human-readable Markdown summary.
 *   Tested Report Generator locally via `tests/test_report_generator.py`.
+*   Built `main.py` to tie the Discovery, Classification, and Reporting engines into a single, executable end-to-end local flow.
 
 **Next Up:**
-*   Build an End-to-End Local Execution Script (`main.py`).
-*   Tie together `DiscoveryEngine` -> `ClassificationEngine` -> `ReportGenerator` into a single runnable flow.
-*   Run the script and manually verify the physical `pre_migration_report.md` output.
+*   **Manual Verification:** Run `export MONDAY_API_KEY='...' && uv run python main.py` against a real account to verify the physical `pre_migration_report.md`.
+*   **Phase 3 (Orchestration):** Begin designing the Orchestrator DAG to transition from read-only reporting to the actual writing/creation loop.

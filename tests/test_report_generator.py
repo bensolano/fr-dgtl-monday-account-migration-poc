@@ -66,15 +66,24 @@ def test_generate_markdown_report_caveats(generator, mock_inventory):
     report = generator.generate_markdown_report(mock_inventory)
 
     # Board caveat
-    assert "- **Shared Board** `[FULL]`:" in report
+    assert "- **Shared Board** (ID: `b2`) `[FULL]`:" in report
     assert "Cannot be created as share via API." in report
 
     # Column caveats
-    assert "- **Mirror Col** `[PARTIAL]`:" in report
+    assert "- **Mirror Col** (ID: `c2`) `[PARTIAL]`:" in report
     assert "Requires connect board first." in report
 
-    assert "- **Dep Col** `[MANUAL_ONLY]`:" in report
+    assert "- **Dep Col** (ID: `c3`) `[MANUAL_ONLY]`:" in report
     assert "No write API." in report
+
+
+def test_generate_markdown_report_appendix(generator, mock_inventory):
+    """Test that the appendix correctly logs boards."""
+    report = generator.generate_markdown_report(mock_inventory)
+
+    assert "## 3. Appendix: All Discovered Boards" in report
+    assert "| Board 1 | `b1` | FULL |" in report
+    assert "| Shared Board | `b2` | FULL |" in report
 
 
 def test_generate_markdown_report_no_caveats(generator):

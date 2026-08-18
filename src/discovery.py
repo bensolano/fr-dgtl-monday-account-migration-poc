@@ -25,22 +25,43 @@ class DiscoveryEngine:
             list[dict[str, Any]]: A list of dictionaries, each representing a workspace.
         """
         query = """
-        query {
-          workspaces {
+        query ($limit: Int, $page: Int) {
+          workspaces (limit: $limit, page: $page) {
             id
             name
             state
           }
         }
         """
-        response = await self.client.execute_query(query)
-        return response.get("data", {}).get("workspaces", [])
+        all_workspaces = []
+        limit = 50
+        page = 1
+
+        while True:
+            variables = {"limit": limit, "page": page}
+            response = await self.client.execute_query(query, variables)
+            page_data = response.get("data", {}).get("workspaces", [])
+            all_workspaces.extend(page_data)
+
+            if len(page_data) < limit:
+                break
+            page += 1
+
+        return all_workspaces
 
     async def get_boards(self, workspace_id: str | None = None) -> list[dict[str, Any]]:
-        """Fetch all boards, handling pagination."""
-        query_first = """
-        query ($workspaceId: [String!]) {
-          boards(workspace_ids: $workspaceId, limit: 500) {
+        """
+        Fetch all boards, optionally filtered by a specific workspace.
+
+        Args:
+            workspace_id (str | None, optional): The ID of the workspace to filter by. Defaults to None.
+
+        Returns:
+            list[dict[str, Any]]: A list of dictionaries, each representing a board.
+        """
+        query = """
+        query ($workspaceId: [ID], $limit: Int, $page: Int) {
+          boards(workspace_ids: $workspaceId, limit: $limit, page: $page) {
             id
             name
             type
@@ -48,15 +69,24 @@ class DiscoveryEngine:
           }
         }
         """
-        # The boards query doesn't strictly support cursor pagination the same way items do
-        # based on standard Monday API, but standard limit/page is often used.
-        # For simplicity and given the 500 limit, we assume this is often sufficient,
-        # but in a production setup, we'd use page/limit for boards if cursors aren't supported.
-        # According to Monday docs, cursor pagination is primary for items/subitems.
+        all_boards = []
+        limit = 100
+        page = 1
 
-        variables = {"workspaceId": [workspace_id]} if workspace_id else {}
-        response = await self.client.execute_query(query_first, variables)
-        return response.get("data", {}).get("boards", [])
+        while True:
+            variables = {"limit": limit, "page": page}
+            if workspace_id:
+                variables["workspaceId"] = [workspace_id]
+
+            response = await self.client.execute_query(query, variables)
+            page_data = response.get("data", {}).get("boards", [])
+            all_boards.extend(page_data)
+
+            if len(page_data) < limit:
+                break
+            page += 1
+
+        return all_boards
 
     async def get_groups(self, board_id: str) -> list[dict[str, Any]]:
         """
