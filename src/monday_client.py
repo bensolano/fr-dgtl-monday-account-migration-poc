@@ -24,6 +24,12 @@ class MondayClient:
     API_URL = "https://api.monday.com/v2"
 
     def __init__(self, api_key: str):
+        """
+        Initializes the MondayClient.
+
+        Args:
+            api_key (str): The Monday.com API token used for authentication.
+        """
         self.headers = {
             "Authorization": api_key,
             "API-Version": "2026-07",

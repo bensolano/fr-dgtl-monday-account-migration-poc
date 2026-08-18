@@ -57,3 +57,7 @@ Based on our reference architecture, enforce the following implementation standa
 ## 8. Architecture & Clean Code
 *   **Single Responsibility Principle (SRP):** Enforce strict separation of concerns. Do not bundle disparate logical components (e.g., exceptions, data models, network clients) in the same file. E.g., all custom exceptions must live in `src/exceptions.py`.
 *   **DRY (Don't Repeat Yourself):** Consolidate reused logic (like standard pagination handlers) into central helper services.
+
+## 9. Documentation Standards
+*   **Strict Docstrings:** Every method/function that accepts input parameters or returns a value MUST have a comprehensive docstring.
+*   **Format:** We use the Google docstring format. You must explicitly document the `Args:` (including their types) and `Returns:` (including the type) for every method.
