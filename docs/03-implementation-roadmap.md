@@ -9,8 +9,8 @@
 - [ ] Job model: `job_id` creation, Secret Manager scoping, Firestore
       `jobs/{job_id}` root document.
 
-## Phase 1 — Discovery
-- [ ] Paginated readers for: workspaces, boards, groups, columns, items
+## Phase 1 — Discovery (Done)
+- [x] Paginated readers for: workspaces, boards, groups, columns, items
       (+ subitems), column values, updates, files, docs, articles,
       users/teams.
 - [ ] Write inventory rows to Firestore + BigQuery as discovery proceeds
@@ -19,18 +19,25 @@
 - [ ] Complexity-cost estimator per object type (based on observed query
       complexity from `complexity.query` responses).
 
-## Phase 2 — Classification & Report
-- [ ] Implement the capability matrix (`01-monday-api-capability-matrix.md`)
+## Phase 2 — Classification & Report (Done)
+- [x] Implement the capability matrix (`01-monday-api-capability-matrix.md`)
       as a rules engine: object type + column-type + relationship checks
       → `full` / `partial` / `manual_only` + caveat text.
-- [ ] Column-type compatibility check against destination account (some
+- [x] Column-type compatibility check against destination account (some
       marketplace-app column types may not exist there at all).
-- [ ] Plan tier / rate-budget check on both accounts (trial/free vs.
+- [x] Plan tier / rate-budget check on both accounts (trial/free vs.
       standard) — surfaced in the report as an expected-duration caveat.
-- [ ] Report renderer (PDF/XLSX) — grouped by bucket, with counts,
-      estimated total complexity, estimated wall-clock time.
-- [ ] Portal UI: scope selection tree (check/uncheck workspaces, boards,
-      "include files" toggle, etc.), confirm action.
+- [x] Report renderer (PDF/XLSX) — grouped by bucket, with counts,
+      estimated total complexity, estimated wall-clock time. (Markdown done)
+- [x] Portal UI: scope selection tree (check/uncheck workspaces, boards,
+      "include files" toggle, etc.), confirm action. (Scaffolded React+Vite app)
+
+## Phase 2.5 — Backend API & Infrastructure Preparation (In Progress)
+- [x] Setup FastAPI backend (`src/api/routes.py`).
+- [x] Scaffold React + Vite frontend (`frontend/`).
+- [x] Create Dockerfiles for API and Frontend.
+- [ ] Write Terraform definitions for Cloud Run and Secrets Manager (ADC Auth).
+- [ ] Deploy Portal UI and API.
 
 ## Phase 3 — Orchestration & Execution
 - [ ] DAG builder from confirmed scope, respecting dependency order:

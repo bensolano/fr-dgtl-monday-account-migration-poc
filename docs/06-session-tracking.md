@@ -28,3 +28,22 @@
 **Next Up:**
 *   **Manual Verification:** Run `export MONDAY_API_KEY='...' && uv run python main.py` against a real account to verify the physical `pre_migration_report.md`.
 *   **Phase 3 (Orchestration):** Begin designing the Orchestrator DAG to transition from read-only reporting to the actual writing/creation loop.
+
+## 2026-08-19 - Microservice Refactor & Frontend Scaffolding
+**Decisions Made:**
+*   **Architecture Shift:** Moving from a pure CLI tool to a decoupled architecture with a React+Vite frontend and a FastAPI backend to support production deployments on Cloud Run.
+*   **Authentication:** Application Default Credentials (ADC) will be strictly used for all GCP services, both locally and in deployed environments.
+*   **Frontend Stack:** React (TypeScript) + Vite with vanilla CSS for a lightweight, modern UI.
+*   **Containerization:** Multi-stage Docker builds to deploy both components efficiently.
+
+**Current State:**
+*   Drafted and approved `docs/07-frontend-and-infra-plan.md`.
+*   Refactored backend: Added `fastapi` and `uvicorn`, created `src/api/routes.py` and `models.py`.
+*   Scaffolded frontend: Created React+Vite app in `frontend/`, implemented `App.tsx` for API key entry and job status polling.
+*   Dockerized: Created `Dockerfile.api` and `Dockerfile.frontend`.
+*   Updated project roadmap (`docs/03-implementation-roadmap.md`) to reflect the new Phase 2.5 infrastructure work.
+
+**Next Up:**
+*   **Infrastructure as Code:** Write Terraform modules for GCP deployment (Cloud Run, Secret Manager) relying on ADC.
+*   **State Management:** Replace the in-memory Python `job_store` dict with Firestore.
+*   **Storage:** Store the generated markdown reports in Cloud Storage instead of the local filesystem.
