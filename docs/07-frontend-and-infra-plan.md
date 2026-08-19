@@ -59,5 +59,5 @@ We will target a robust, Terraform-ready GCP architecture:
     *   Define the required environment variables and service accounts needed for the Terraform deployment.
 
 ## 5. Verification
-*   **Local E2E:** Run the React dev server and FastAPI server locally. Enter keys in the UI, verify that FastAPI creates a job record, simulates the Discovery job, and returns a downloadable report.
-*   **Docker:** Build and run all components via `docker-compose` locally to verify container boundaries before GCP deployment.
+*   **Local E2E:** Run the `./start_local.sh` script to concurrently launch the React dev server and FastAPI server locally. Enter keys in the UI, verify that FastAPI creates a job record in Firestore, simulates the Discovery job, and returns a downloadable report from Cloud Storage. (Requires `gcloud auth application-default login`).
+*   **Container Boundary Verification:** Build the standalone images using `Dockerfile.api` and `Dockerfile.frontend` manually if testing container isolation before GCP deployment.

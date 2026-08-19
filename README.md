@@ -1,43 +1,44 @@
 # Monday.com Account Migration Assessment Tool
 
-This tool performs a read-only discovery of a Monday.com account and generates a comprehensive Markdown report summarizing the objects discovered (Workspaces, Boards, Groups, Columns, Items) and their readiness for automated migration.
+This tool performs a read-only discovery of a Monday.com account and generates a comprehensive Markdown report summarizing the objects discovered and their readiness for automated migration.
 
-## Setup
+## Architecture
 
-This project uses [`uv`](https://github.com/astral-sh/uv) for fast Python dependency and environment management.
+The project is built as a microservice architecture ready for GCP deployment:
+*   **Backend (API):** FastAPI (Python 3.12)
+*   **Frontend (Portal):** React + Vite (Node 24)
+*   **Infrastructure:** Terraform modules for Cloud Run, Firestore, Secret Manager, and Cloud Storage.
 
-1. **Install dependencies:**
-   ```bash
-   uv sync
-   ```
+## Local Development & Testing
 
-2. **Set your API Key:**
-   You must provide a valid Monday.com API token via an environment variable.
-   ```bash
-   export MONDAY_API_KEY="your_personal_or_app_api_token"
-   ```
+We provide a single script to spin up the entire application locally for testing.
 
-## Usage
+### Prerequisites
+1.  Install [`uv`](https://github.com/astral-sh/uv) for Python management.
+2.  Install [Node.js 24](https://nodejs.org/).
+3.  *(Optional but Recommended)* To test the GCP integrations locally (Firestore, GCS), authenticate with your GCP account:
+    ```bash
+    gcloud auth application-default login
+    ```
 
-### 1. Full Discovery & Reporting
-To hit the Monday.com API, download the entire account structure, and generate the report:
-
+### Starting the App
+Run the following script from the root directory:
 ```bash
-uv run python main.py
-```
-*This will output two files:*
-- `local_inventory.json`: The raw JSON dump of the discovered account structure.
-- `pre_migration_report.md`: The human-readable Markdown report.
-
-### 2. Skip Discovery (Use Cache)
-If you have already run a full discovery and just want to tweak the classification rules or test changes to the Markdown report formatting, use the `--use-cache` flag. This skips all API calls and parses your existing `local_inventory.json`.
-
-```bash
-uv run python main.py --use-cache
+./start_local.sh
 ```
 
-## Development & Testing
-To run the offline test suite and enforce formatting:
+**What this script does:**
+1.  **Environment Variables:** It automatically exports mock values for `PROJECT_ID` and `REPORTS_BUCKET` to your local terminal session. *Note: When deployed to GCP, you do not need to manage these manually; Terraform injects these directly into the Cloud Run container environment (see `terraform/main.tf`).*
+2.  **Starts Backend:** Spools up the FastAPI server on `http://localhost:8000`.
+3.  **Starts Frontend:** Spools up the Vite dev server on `http://localhost:5173`.
+
+Once running, open [http://localhost:5173](http://localhost:5173) in your browser to enter your API keys and generate a report.
+
+## Deployment
+See `terraform/` directory for the IaC definitions required to deploy this architecture to Google Cloud.
+
+## Code Quality
+To run the offline Python test suite and enforce formatting:
 ```bash
 uv run pytest tests/
 uv run ruff check --fix .
