@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - PROJECT_ID=local-dev-project
+      - REPORTS_BUCKET=local-dev-reports-bucket
+      # To test GCP integrations locally (Firestore, GCS, Secret Manager), 
+      # you need to pass Application Default Credentials (ADC) to the container.
+      # Uncomment the lines below and adjust the path to your ADC json file if needed:
+      # - GOOGLE_APPLICATION_CREDENTIALS=/tmp/keys/adc.json
+    # volumes:
+      # - ~/.config/gcloud/application_default_credentials.json:/tmp/keys/adc.json:ro
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
