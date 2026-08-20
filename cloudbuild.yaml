@@ -49,6 +49,8 @@ steps:
       - '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:latest'
       - '--region'
       - '$_REGION'
+      - '--port'
+      - '8000'
       - '--service-account'
       - 'migration-api-sa@$PROJECT_ID.iam.gserviceaccount.com'
       - '--set-env-vars'

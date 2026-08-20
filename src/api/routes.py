@@ -6,9 +6,10 @@ import uuid
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from google.cloud import firestore, secretmanager, storage
+from google.cloud import run_v2, secretmanager, storage
 
 from src.api.models import JobCreateRequest, JobCreateResponse, JobStatusResponse
+from src.job_engine import execute_discovery_job, get_job, set_job_status
 
 logger = logging.getLogger(__name__)
 
@@ -24,97 +25,48 @@ app.add_middleware(
 )
 
 PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
+REGION = os.environ.get("REGION", "europe-west1")
 REPORTS_BUCKET = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
+DISCOVERY_JOB_NAME = os.environ.get("DISCOVERY_JOB_NAME")
 
 # Initialize GCP Clients (Relying on Application Default Credentials)
 try:
-    db = firestore.Client(project=PROJECT_ID)
     storage_client = storage.Client(project=PROJECT_ID)
     secret_client = secretmanager.SecretManagerServiceClient()
+    run_client = run_v2.JobsClient()
 except Exception as e:  # noqa: BLE001
     logger.warning(f"Failed to initialize GCP clients (ensure ADC is set): {e}")
-    db = None
     storage_client = None
     secret_client = None
+    run_client = None
 
 
-def set_job_status(
-    job_id: str, status: str, report_path: str | None = None, error: str | None = None
-):
-    """Helper to update Firestore job status"""
-    if not db:
-        logger.warning(f"No Firestore client. Would update job {job_id} to {status}")
+def trigger_cloud_run_job(job_id: str):
+    """Triggers the Cloud Run batch job using the GCP SDK."""
+    if not run_client or not DISCOVERY_JOB_NAME:
+        logger.warning(
+            f"Cloud Run Job client or DISCOVERY_JOB_NAME not configured. Cannot trigger job {job_id}."
+        )
         return
-    doc_ref = db.collection("jobs").document(job_id)
-    update_data = {"status": status, "updated_at": datetime.datetime.now(datetime.UTC)}
-    if report_path:
-        update_data["report_path"] = report_path
-    if error:
-        update_data["error"] = error
-    # Use set with merge to create if not exists
-    doc_ref.set(update_data, merge=True)
 
-
-def get_job(job_id: str):
-    if not db:
-        return None
-    doc = db.collection("jobs").document(job_id).get()
-    if doc.exists:
-        return doc.to_dict()
-    return None
-
-
-async def run_discovery_job(job_id: str, source_api_key: str):
-    """
-    Simulates the background discovery job.
-    In the full architecture, this would trigger a Cloud Run Job via GCP API.
-    For this POC, we run it in the background task.
-    """
-    logger.info(f"Starting discovery job for {job_id}")
-    set_job_status(job_id, "RUNNING")
-
-    from src.classification import ClassificationEngine
-    from src.discovery import DiscoveryEngine
-    from src.monday_client import MondayClient
-    from src.report_generator import ReportGenerator
+    name = f"projects/{PROJECT_ID}/locations/{REGION}/jobs/{DISCOVERY_JOB_NAME}"
+    request = run_v2.RunJobRequest(
+        name=name,
+        overrides={
+            "container_overrides": [{"env": [{"name": "JOB_ID", "value": job_id}]}]
+        },
+    )
 
     try:
-        # 1. Discovery
-        client = MondayClient(api_key=source_api_key)
-        discovery_engine = DiscoveryEngine(client=client)
-
-        # Save inventory locally first
-        local_inventory_path = f"/tmp/{job_id}_inventory.json"
-        inventory = await discovery_engine.discover_full_account(
-            output_path=local_inventory_path
+        operation = run_client.run_job(request=request)
+        logger.info(
+            f"Triggered Cloud Run Job for {job_id}. Operation: {operation.operation.name}"
         )
-
-        # 2. Classification
-        classification_engine = ClassificationEngine()
-        classified_inventory = classification_engine.process_inventory(inventory)
-
-        # 3. Report Generation
-        report_generator = ReportGenerator()
-        report_md = report_generator.generate_markdown_report(classified_inventory)
-        local_report_path = f"/tmp/{job_id}_report.md"
-        report_generator.save_report(report_md, file_path=local_report_path)
-
-        # 4. Upload to Cloud Storage
-        report_gcs_path = None
-        if storage_client:
-            bucket = storage_client.bucket(REPORTS_BUCKET)
-            blob_name = f"reports/{job_id}/pre_migration_report.md"
-            blob = bucket.blob(blob_name)
-            blob.upload_from_filename(local_report_path)
-            report_gcs_path = blob_name
-            logger.info(f"Uploaded report to GCS: gs://{REPORTS_BUCKET}/{blob_name}")
-
-        set_job_status(job_id, "COMPLETED", report_path=report_gcs_path)
-        logger.info(f"Discovery job {job_id} completed successfully.")
-
     except Exception as e:  # noqa: BLE001
-        logger.error(f"Discovery job {job_id} failed: {e}")
-        set_job_status(job_id, "FAILED", error=str(e))
+        logger.error(f"Failed to trigger Cloud Run Job for {job_id}: {e}")
+        set_job_status(
+            job_id, "FAILED", error="Failed to start background job infrastructure."
+        )
 
 
 @app.post("/api/v1/jobs", response_model=JobCreateResponse)
@@ -166,14 +118,19 @@ async def create_job(request: JobCreateRequest, background_tasks: BackgroundTask
     # Init state in Firestore
     set_job_status(job_id, "PENDING")
 
-    # In production, we'd trigger a Cloud Run Job here passing the job_id.
-    # For now, simulate background processing locally.
-    background_tasks.add_task(run_discovery_job, job_id, request.source_api_key)
+    if DISCOVERY_JOB_NAME and run_client:
+        # PRODUCTION: Trigger actual GCP Cloud Run Job
+        trigger_cloud_run_job(job_id)
+        msg = "Cloud Run job triggered."
+    else:
+        # LOCAL DEVELOPMENT: Fallback to running it in the background of the FastAPI process
+        background_tasks.add_task(execute_discovery_job, job_id)
+        msg = "Local background task started."
 
     return JobCreateResponse(
         job_id=job_id,
         status="PENDING",
-        message="Discovery job created and started in background.",
+        message=msg,
     )
 
 
@@ -182,6 +139,8 @@ async def get_job_status(job_id: str):
     job_data = get_job(job_id)
     if not job_data:
         # Fallback logic for local testing without firestore
+        from src.job_engine import db  # Import here to check local db state
+
         if not db:
             return JobStatusResponse(job_id=job_id, status="PENDING")
         raise HTTPException(status_code=404, detail="Job not found")
