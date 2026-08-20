@@ -41,6 +41,16 @@ def set_job_status(
     doc_ref.set(update_data, merge=True)
 
 
+def get_job(job_id: str):
+    """Helper to retrieve Firestore job status"""
+    if not db:
+        return None
+    doc = db.collection("jobs").document(job_id).get()
+    if doc.exists:
+        return doc.to_dict()
+    return None
+
+
 async def execute_discovery_job(job_id: str):
     """
     Core execution logic for a migration discovery job.
