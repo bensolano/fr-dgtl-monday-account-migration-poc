@@ -2,6 +2,12 @@ server {
     listen       ${PORT};
     server_name  localhost;
 
+    # Proxy API requests to the backend Cloud Run service
+    location /api/ {
+        proxy_pass ${API_URL};
+        proxy_ssl_server_name on; # Required for Cloud Run HTTPS routing
+    }
+
     location / {
         root   /usr/share/nginx/html;
         index  index.html index.htm;

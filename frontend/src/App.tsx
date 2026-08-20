@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// In production, we use relative paths to hit the NGINX proxy.
+// In local development, we hit the FastAPI server directly on port 8000.
+const API_BASE_URL = import.meta.env.PROD ? '/api/v1' : 'http://localhost:8000/api/v1';
 
 function App() {
   const [sourceApiKey, setSourceApiKey] = useState('');

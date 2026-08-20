@@ -56,17 +56,19 @@ steps:
       - '--allow-unauthenticated'
 
   # 7. Deploy Portal Service to Cloud Run
+  # We use bash to fetch the backend URL dynamically and pass it to the frontend NGINX proxy
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - 'run'
-      - 'deploy'
-      - 'migration-portal'
-      - '--image'
-      - '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal:latest'
-      - '--region'
-      - '$_REGION'
-      - '--allow-unauthenticated'
+      - '-c'
+      - |
+        API_URL=$$(gcloud run services describe migration-api --region=$_REGION --format='value(status.url)')
+        echo "Retrieved backend API URL: $$API_URL"
+        gcloud run deploy migration-portal \
+          --image $_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal:latest \
+          --region $_REGION \
+          --allow-unauthenticated \
+          --set-env-vars API_URL=$$API_URL
 
 options:
   logging: CLOUD_LOGGING_ONLY
