@@ -35,7 +35,24 @@ Run the following script from the root directory:
 Once running, open [http://localhost:5173](http://localhost:5173) in your browser to enter your API keys and generate a report.
 
 ## Deployment
-See `terraform/` directory for the IaC definitions required to deploy this architecture to Google Cloud.
+
+We strictly separate **Infrastructure Provisioning** (Terraform) from **Application Deployment** (Cloud Build).
+
+1.  **Provision Infrastructure:**
+    First, use Terraform to provision the foundational resources (Firestore, Storage, Secret Manager, Service Accounts, and Artifact Registry).
+    ```bash
+    cd terraform
+    terraform init
+    terraform apply -var="project_id=YOUR_PROJECT_ID"
+    ```
+
+2.  **Deploy Application (Manual CI/CD Trigger):**
+    Once the base infrastructure exists, use Cloud Build to build the Docker images and deploy them to Cloud Run. The build script automatically links the deployed services to the strict Service Accounts created by Terraform.
+    ```bash
+    cd ..
+    PROJECT_ID=YOUR_PROJECT_ID ./deploy.sh
+    ```
+    *Note: In a true production environment, `cloudbuild.yaml` would be triggered automatically by a GitHub push rather than `deploy.sh`.*
 
 ## Code Quality
 To run the offline Python test suite and enforce formatting:

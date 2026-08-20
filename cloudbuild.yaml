@@ -1,0 +1,72 @@
+steps:
+  # 1. Build API & Job Image (Shared Codebase)
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:$COMMIT_SHA', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:latest', '-f', 'Dockerfile.api', '.']
+  
+  # 2. Push API & Job Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api']
+
+  # 3. Build Frontend Portal Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal:$COMMIT_SHA', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal:latest', '-f', 'Dockerfile.frontend', '.']
+  
+  # 4. Push Frontend Portal Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal']
+
+  # 5. Deploy Discovery Job to Cloud Run Jobs
+  # Notice the --service-account flag linking the job to the Terraform-created SA
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'migration-discovery-job'
+      - '--image'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:latest'
+      - '--region'
+      - '$_REGION'
+      - '--service-account'
+      - 'migration-job-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars'
+      - 'PROJECT_ID=$PROJECT_ID,REPORTS_BUCKET=$PROJECT_ID-migration-reports'
+      - '--command'
+      - 'uv'
+      - '--args'
+      - 'run,python,main.py' # Override the uvicorn default command to run the batch script instead
+
+  # 6. Deploy API Service to Cloud Run
+  # Notice the --service-account flag linking the API to the Terraform-created SA
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'migration-api'
+      - '--image'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:latest'
+      - '--region'
+      - '$_REGION'
+      - '--service-account'
+      - 'migration-api-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars'
+      - 'PROJECT_ID=$PROJECT_ID,REPORTS_BUCKET=$PROJECT_ID-migration-reports,DISCOVERY_JOB_NAME=migration-discovery-job'
+      - '--allow-unauthenticated'
+
+  # 7. Deploy Portal Service to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'migration-portal'
+      - '--image'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal:latest'
+      - '--region'
+      - '$_REGION'
+      - '--allow-unauthenticated'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

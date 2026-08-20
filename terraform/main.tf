@@ -93,91 +93,28 @@ resource "google_storage_bucket_iam_member" "job_storage_creator" {
 }
 
 
-# --- Cloud Run Job (Discovery) ---
-resource "google_cloud_run_v2_job" "discovery_job" {
-  name     = "migration-discovery-job"
-  location = var.region
-
-  template {
-    template {
-      service_account = google_service_account.job_sa.email
-      containers {
-        image = var.job_image
-        env {
-          name  = "PROJECT_ID"
-          value = var.project_id
-        }
-        env {
-          name  = "REPORTS_BUCKET"
-          value = google_storage_bucket.reports_bucket.name
-        }
-        # In Cloud Run Jobs, we will pass JOB_ID as an execution environment variable
-      }
-    }
-  }
-  depends_on = [google_project_service.services]
+# --- Artifact Registry ---
+resource "google_artifact_registry_repository" "repo" {
+  location      = var.region
+  repository_id = "migration-repo"
+  description   = "Docker repository for migration POC"
+  format        = "DOCKER"
+  depends_on    = [google_project_service.services]
 }
 
+# --- Cloud Build IAM ---
+data "google_project" "project" {}
 
-# --- Cloud Run Service (API) ---
-resource "google_cloud_run_v2_service" "api_service" {
-  name     = "migration-api"
-  location = var.region
-  
-  template {
-    service_account = google_service_account.api_sa.email
-    containers {
-      image = var.api_image
-      
-      env {
-        name  = "PROJECT_ID"
-        value = var.project_id
-      }
-      env {
-        name  = "REGION"
-        value = var.region
-      }
-      env {
-        name  = "REPORTS_BUCKET"
-        value = google_storage_bucket.reports_bucket.name
-      }
-      env {
-        name  = "DISCOVERY_JOB_NAME"
-        value = google_cloud_run_v2_job.discovery_job.name
-      }
-    }
-  }
-  depends_on = [google_project_service.services]
+# Allow Cloud Build to deploy to Cloud Run
+resource "google_project_iam_member" "cloudbuild_run_admin" {
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${data.google_project.project.number}@cloudbuild.gserviceaccount.com"
 }
 
-# Make API publicly accessible (or restrict via IAM depending on requirements)
-resource "google_cloud_run_v2_service_iam_member" "api_public" {
-  name     = google_cloud_run_v2_service.api_service.name
-  location = google_cloud_run_v2_service.api_service.location
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
-
-# --- Cloud Run Service (Portal Frontend) ---
-resource "google_cloud_run_v2_service" "portal_service" {
-  name     = "migration-portal"
-  location = var.region
-  
-  template {
-    containers {
-      image = var.portal_image
-      
-      # Since it's a frontend, the API URL needs to be injected or proxied
-      # For a static React build, we might need a small NGINX replacement logic 
-      # or configure CORS properly on the API.
-    }
-  }
-  depends_on = [google_project_service.services]
-}
-
-resource "google_cloud_run_v2_service_iam_member" "portal_public" {
-  name     = google_cloud_run_v2_service.portal_service.name
-  location = google_cloud_run_v2_service.portal_service.location
-  role     = "roles/run.invoker"
-  member   = "allUsers"
+# Allow Cloud Build to attach the API and Job service accounts to Cloud Run
+resource "google_project_iam_member" "cloudbuild_sa_user" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountUser"
+  member  = "serviceAccount:${data.google_project.project.number}@cloudbuild.gserviceaccount.com"
 }
