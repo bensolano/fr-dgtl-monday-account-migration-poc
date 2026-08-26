@@ -43,10 +43,10 @@
 - [x] DAG builder from confirmed scope, respecting dependency order:
       workspace → board → group → column → item → subitem → update →
       file → doc.
-- [ ] Cloud Tasks queue setup per stage/direction (source-read queue,
+- [x] Cloud Tasks queue setup per stage/direction (source-read queue,
       dest-write queue), with `max_dispatches_per_second` /
       `max_concurrent_dispatches` as coarse limits.
-- [ ] Token-bucket rate limiter in the task handler, fed by live
+- [x] Token-bucket rate limiter in the task handler, fed by live
       `complexity` response data.
 - [x] Idempotency check (`source_id → dest_id` lookup in Firestore)
       before every create-mutation.

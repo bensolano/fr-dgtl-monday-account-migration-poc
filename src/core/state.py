@@ -107,3 +107,101 @@ class StateManager:
                 "created_at": firestore.SERVER_TIMESTAMP,
             }
         )
+
+    def consume_budget(self, job_id: str, required_tokens: int = 50000) -> bool:
+        """
+        Proactively checks if the global token bucket has enough tokens.
+        If sufficient, deducts them transactionally and returns True.
+        If insufficient, returns False, signaling the worker to yield.
+
+        Args:
+            job_id: The job context.
+            required_tokens: Expected complexity of the next operation.
+
+        Returns:
+            bool: True if safe to proceed, False to rate limit.
+        """
+        import datetime
+
+        if not self.db:
+            return True  # Allow pass-through for local dev without Firestore
+
+        bucket_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("state")
+            .document("complexity_bucket")
+        )
+
+        @firestore.transactional
+        def update_in_transaction(transaction, ref):
+            snapshot = ref.get(transaction=transaction)
+
+            # Default to full budget if not initialized
+            current_tokens = 5000000
+            last_reset = datetime.datetime.now(datetime.UTC)
+
+            if snapshot.exists:
+                data = snapshot.to_dict()
+                current_tokens = data.get("remaining_tokens", 5000000)
+                # We store naive datetimes in Firestore, so we need to handle them carefully
+                last_reset_val = data.get("last_reset")
+                if last_reset_val:
+                    # Firestore handles the parsing usually, but just in case
+                    if isinstance(last_reset_val, str):
+                        last_reset = datetime.datetime.fromisoformat(last_reset_val)
+                    else:
+                        last_reset = last_reset_val
+
+                # If more than 60 seconds have passed since last reset, refill the bucket
+                if (
+                    datetime.datetime.now(datetime.UTC) - last_reset
+                ).total_seconds() > 60:
+                    current_tokens = 5000000
+                    last_reset = datetime.datetime.now(datetime.UTC)
+
+            if current_tokens >= required_tokens:
+                # Deduct and allow
+                transaction.set(
+                    ref,
+                    {
+                        "remaining_tokens": current_tokens - required_tokens,
+                        "last_reset": last_reset,
+                    },
+                )
+                return True
+            else:
+                # Reject
+                return False
+
+        return update_in_transaction(self.db.transaction(), bucket_ref)
+
+    def sync_budget(
+        self, job_id: str, actual_remaining: int, reset_in_seconds: int
+    ) -> None:
+        """
+        Reactively syncs the token bucket with the exact numbers returned by Monday API.
+
+        Args:
+            job_id: The job context.
+            actual_remaining: The exact remaining complexity points.
+            reset_in_seconds: The exact seconds until the next refill.
+        """
+        import datetime
+
+        if not self.db:
+            return
+
+        bucket_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("state")
+            .document("complexity_bucket")
+        )
+
+        # Calculate when this specific budget will expire
+        last_reset = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            seconds=(60 - reset_in_seconds)
+        )
+
+        bucket_ref.set({"remaining_tokens": actual_remaining, "last_reset": last_reset})

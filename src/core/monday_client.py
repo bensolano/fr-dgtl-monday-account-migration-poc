@@ -41,10 +41,20 @@ class MondayClient:
         query: str,
         variables: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        distributed: bool = False,
     ) -> dict[str, Any]:
+        """
+        Executes a GraphQL query.
+
+        Args:
+            query: The GraphQL query string.
+            variables: Query variables.
+            idempotency_key: UUID for preventing duplicate side effects.
+            distributed: If True, raises MondayRateLimitError instead of sleeping on 429s.
+        """
         try:
             return await self._execute_query_with_retries(
-                query, variables, idempotency_key
+                query, variables, idempotency_key, distributed
             )
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
@@ -75,6 +85,7 @@ class MondayClient:
         query: str,
         variables: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        distributed: bool = False,
     ) -> dict[str, Any]:
         rate_limit_retries = 0
         max_rate_limit_retries = 5
@@ -131,6 +142,15 @@ class MondayClient:
 
             # 3. Handle Rate Limit sleep logic explicitly
             if retry_s is not None:
+                if distributed:
+                    # In distributed mode (Cloud Tasks), we bubble up to let the dispatcher retry
+                    logger.warning(
+                        f"Rate limit exceeded (distributed). Requesting requeue in {retry_s}s."
+                    )
+                    raise MondayRateLimitError(
+                        "Rate limit exceeded.", retry_in_seconds=retry_s
+                    )
+
                 if rate_limit_retries >= max_rate_limit_retries:
                     raise MondayRateLimitError(
                         f"Max rate limit retries ({max_rate_limit_retries}) exceeded.",
@@ -141,7 +161,12 @@ class MondayClient:
                 rate_limit_retries += 1
                 continue
 
-            # 4. Process GraphQL 200 OK Applications Errors
+            # 4. Extract complexity metadata for the token bucket sync
+            complexity_data = None
+            if "data" in data and "complexity" in data["data"]:
+                complexity_data = data["data"]["complexity"]
+
+            # 5. Process GraphQL 200 OK Applications Errors
             if "errors" in data:
                 has_data = data.get("data") is not None
                 if has_data:
@@ -154,5 +179,9 @@ class MondayClient:
                     errors=data["errors"],
                     data=data.get("data"),
                 )
+
+            # Attach complexity metadata directly to the root for the caller to sync
+            if complexity_data:
+                data["_meta_complexity"] = complexity_data
 
             return data

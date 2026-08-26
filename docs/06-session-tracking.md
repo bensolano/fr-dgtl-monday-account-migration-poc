@@ -66,7 +66,9 @@
 *   Added `google-cloud-tasks` client library and updated `OrchestratorEngine.enqueue_dag` to push the first stage of valid items directly to GCP queues.
 *   Implemented FastAPI worker endpoints (`src/api/worker_routes.py`) to receive Cloud Tasks payloads and execute the required idempotency checks via `StateManager`.
 *   Refactored FastAPI route structure to separate concerns: `job_routes.py` for Discovery triggers and `worker_routes.py` for DAG execution, orchestrated by `src/api/main.py`.
+*   Implemented `TokenBucket` proactive rate limiting in `StateManager` using Firestore transactions.
+*   Modified `MondayClient._execute_query_with_retries` to support `distributed=True`, returning complexity metadata and raising `MondayRateLimitError` to leverage Cloud Tasks native backoff instead of localized `asyncio.sleep`.
 
 **Next Up:**
-*   **Phase 3 (Rate Limiting & Execution):** Implement the Token-Bucket rate limiter inside the worker endpoints using complexity values.
-*   Implement stage gating (listening for queue depletion to enqueue the next DAG stage).
+*   **Phase 3 (Execution Mutations):** Implement the actual GraphQL creation mutations inside `worker_routes.py` (Workspaces, Boards, Groups, Columns, Items).
+*   Implement stage gating (listening for queue depletion to enqueue the next DAG stage via Pub/Sub or Firestore listeners).

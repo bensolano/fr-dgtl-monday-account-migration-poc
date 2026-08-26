@@ -4,13 +4,27 @@ import httpx
 import pytest
 import respx
 
-from src.core.exceptions import MondayGraphQLError
+from src.core.exceptions import MondayGraphQLError, MondayRateLimitError
 from src.core.monday_client import MondayClient
 
 
 @pytest.fixture
 def client():
     return MondayClient("test_token")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_distributed_rate_limit_bubbles_up(client):
+    route = respx.post("https://api.monday.com/v2")
+
+    # Simulate a 429
+    route.side_effect = [httpx.Response(429, headers={"Retry-After": "15"}, json={})]
+
+    with pytest.raises(MondayRateLimitError) as exc:
+        await client.execute_query("{ query }", distributed=True)
+
+    assert exc.value.retry_in_seconds == 15
 
 
 @respx.mock
