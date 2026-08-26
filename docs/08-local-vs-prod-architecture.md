@@ -51,3 +51,18 @@ When running locally (via `start_local.sh`), the system leverages Application De
 
 *   **Local**: Relies entirely on your user account credentials configured via `gcloud auth application-default login`. Your user account must have permissions to read/write to Secret Manager, Firestore, and GCS in the specified `PROJECT_ID`.
 *   **Production**: Authenticates using dedicated **Service Accounts** configured via Terraform (`terraform/main.tf`). The Cloud Run web service uses one service account (with permissions to trigger jobs), while the Cloud Run Job uses another (with permissions to execute the discovery).
+
+## 5. Execution Orchestration (Phase 3 & Beyond)
+
+As the project transitions from read-only Discovery into the Execution phase (writing data to the destination account), the architecture introduces new infrastructure components to handle scale, dependency ordering, and rate limits.
+
+### A. State & Idempotency (Firestore)
+*   To ensure mutations are idempotent and relationships (e.g., items within a specific group) are preserved, the system maintains an ID map.
+*   **Structure**: For every created entity, a mapping of `source_id -> dest_id` is stored in Firestore, typically as a subcollection under the main job document (e.g., `jobs/{job_id}/id_map`).
+*   **Idempotency Checks**: Before executing any create mutation, the execution engine queries this `id_map` collection. If a `dest_id` already exists for the given `source_id`, the creation is safely bypassed.
+
+### B. Cloud Tasks & DAG Gating
+*   **DAG Builder**: The orchestrator parses the discovery inventory and builds a Directed Acyclic Graph (DAG) of creation tasks respecting monday.com's strict hierarchy (Workspace → Board → Group → Column → Item → Subitem → Update).
+*   **Queues**: Tasks are pushed to GCP Cloud Tasks queues dedicated to specific stages. These queues enforce `max_dispatches_per_second` to provide a coarse hardware-level rate limit.
+*   **Gating**: A stage (e.g., Groups) cannot begin execution until the upstream stage (e.g., Boards) is 100% complete. This is managed via Pub/Sub events or Firestore listeners that monitor the completion status of queued tasks and trigger the next stage.
+*   **Local Bypass**: When running locally without Cloud Tasks provisioning, the orchestrator executes tasks sequentially or via local async queues (`asyncio.Queue`), mocking the Cloud Tasks dispatch mechanism to maintain developer velocity.
