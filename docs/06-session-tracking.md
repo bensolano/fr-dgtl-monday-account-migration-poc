@@ -60,8 +60,10 @@
 *   Restructured directories, extracted job execution logic, and added missing `get_job` function in `job_engine`.
 *   Added fallback logic to proxy report downloads when local signed URL generation fails.
 *   Set up dedicated Cloud Run Job image with correct entrypoint.
+*   Implemented Firestore-backed `StateManager` (`src/core/state.py`) to manage idempotency mappings (`get_dest_id`, `set_dest_id`) before execution.
+*   Implemented `OrchestratorEngine` (`src/engines/orchestrator_engine.py`) to parse classified inventories into a staged DAG, properly filtering out `manual_only` tasks and enforcing execution order.
 
 **Next Up:**
-*   **Phase 3 (Orchestration & Execution):** Build the DAG orchestrator respecting dependency order (workspace → board → group → column → item).
-*   Set up Cloud Tasks queues per stage with coarse concurrency limits.
-*   Implement token-bucket rate limiter and idempotency checks before create-mutations.
+*   **Phase 3 (Cloud Tasks Integration):** Set up Cloud Tasks queues per stage with coarse concurrency limits in Terraform.
+*   Implement backend logic in `OrchestratorEngine` to enqueue the DAG tasks into these queues.
+*   Implement token-bucket rate limiter.
