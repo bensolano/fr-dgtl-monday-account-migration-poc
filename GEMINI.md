@@ -71,3 +71,4 @@ Based on our reference architecture, enforce the following implementation standa
 
 ## 11. Architecture Documentation
 *   **Keep Architecture Updated:** Whenever architectural decisions are made, new infrastructure is introduced, or we transition between local and production implementations, you MUST update `docs/08-local-vs-prod-architecture.md` to reflect the current state. This ensures our architectural blueprints remain accurate as the plan evolves.
+*   **Method Overview Sync:** The file `docs/09-method-overview.md` serves as the technical directory of the codebase. You MUST keep this file updated whenever adding new engines, modifying state management logic, or significantly refactoring core methods.

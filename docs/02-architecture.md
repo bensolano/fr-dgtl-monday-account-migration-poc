@@ -70,20 +70,10 @@
 
 ## 3. Rate limiting design
 
-- Two independent token buckets per job: one for the source token
-  (reads), one for the destination token (writes), each seeded from that
-  account's actual budget (check plan tier during discovery — trial/free
-  accounts have lower budgets).
-- Bucket refill driven by real `complexity.after` / `reset_in_x_seconds`
-  values from live API responses, not a static assumption — the budget
-  can shift if the account's plan changes or other integrations are
-  also consuming it concurrently.
-- Cloud Tasks queue settings act as a coarse ceiling; the token bucket
-  inside the handler is the precise governor.
-- Favor **many small tasks** (one per item/object) over few large batched
-  tasks — this keeps retries cheap and keeps individual call complexity
-  well under the 5,000,000-point single-call cap, and paginated calls
-  are cheaper than unbounded nested queries.
+- **Single Global Execution Token Bucket**: During execution (writes), the system maintains a single transactional token bucket in Firestore (`jobs/{job_id}/state/complexity_bucket`) to govern the destination token's complexity budget.
+- **Budget Syncing**: The bucket's capacity is driven by real `complexity.after` and `reset_in_x_seconds` values returned directly in the metadata of every successful live API response (tracked in `src/engines/execution_engine.py` via `_sync_complexity`). We treat the live server value as ground truth over local estimates.
+- **Coarse vs Fine Governing**: Cloud Tasks queue settings (`max_dispatches_per_second` configured in Terraform) act as a hardware-level coarse ceiling. The Token Bucket inside the `worker_routes.py` handler is the precise proactive governor, yielding HTTP 429s back to Cloud Tasks to pause queues gracefully when tokens run low.
+- **Batched Mutations**: To minimize HTTP overhead, the system prefers using batch mutations like `change_multiple_column_values` where possible, but execution tasks are dispatched one-per-entity to ensure precise idempotency and rollback safety.
 
 ## 4. Retry & failure handling
 
