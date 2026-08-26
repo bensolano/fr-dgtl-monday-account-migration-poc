@@ -5,9 +5,22 @@ This tool performs a read-only discovery of a Monday.com account and generates a
 ## Architecture
 
 The project is built as a microservice architecture ready for GCP deployment:
-*   **Backend (API):** FastAPI (Python 3.12)
+*   **Backend (API & Workers):** FastAPI (Python 3.12)
 *   **Frontend (Portal):** React + Vite (Node 24)
-*   **Infrastructure:** Terraform modules for Cloud Run, Firestore, Secret Manager, and Cloud Storage.
+*   **Infrastructure:** Terraform modules for Cloud Run, Cloud Tasks, Firestore, Secret Manager, and Cloud Storage.
+
+For deep dives into the system design, consult the `/docs` folder:
+*   [02 - Architecture Details](docs/02-architecture.md)
+*   [04 - Data Models & Schemas](docs/04-data-models-and-schemas.md)
+*   [08 - Local vs. Production Execution Flow](docs/08-local-vs-prod-architecture.md)
+
+## Core Capabilities (Phase 3 Completed)
+*   **Read-Only Discovery**: Fully mapping workspaces, boards, groups, items, and columns.
+*   **Classification Engine**: Cross-referencing against Monday's capability matrix to surface blocked fields.
+*   **Orchestration DAG**: Transforming inventory into an explicitly ordered graph (Workspaces -> Boards -> Groups -> Columns -> Items) to adhere to strict parent-child constraints.
+*   **Cloud Tasks Execution**: Queuing workloads asynchronously across dedicated GCP Cloud Tasks queues with rate limits per stage.
+*   **Proactive Rate Limiting**: Global `TokenBucket` maintained in Firestore interacting natively with Cloud Tasks backoffs.
+*   **Idempotency Engine**: Firestore `source_id -> dest_id` mapping preventing duplicate entity creation on network retries.
 
 ## Local Development & Testing
 

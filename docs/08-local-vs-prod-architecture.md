@@ -1,68 +1,38 @@
 # Local vs. Deployed Architecture Flow
 
-This document outlines the system architecture and execution flow for the Monday.com Account Migration tool, highlighting the differences between **Local Development** and **Deployed (GCP Production)** environments. 
+This document outlines the system architecture and execution flow for the Monday.com Account Migration tool, highlighting how the system gracefully bridges the gap between **Local Development** and **Deployed (GCP Production)** environments without altering core business logic.
 
-## 1. Execution Flow Overview
+---
 
-When an Operator submits a migration discovery job via the frontend portal, the request follows this general flow:
+## Phase 1 & 2: Discovery & Reporting
 
-1.  **Job Creation (`POST /api/v1/jobs`)**: 
-    *   The FastAPI backend generates a `job_id`.
-    *   API keys (Source/Destination) are securely saved.
-    *   Initial status (`PENDING`) is recorded.
-    *   The async Discovery Job is triggered.
-2.  **Job Execution (Discovery, Classification, Report)**:
-    *   The background process queries the Monday.com API.
-    *   It classifies the objects.
-    *   It generates a Markdown report.
-    *   The report is uploaded to Cloud Storage.
-    *   Job status is updated to `COMPLETED`.
-3.  **Polling & Download (`GET /api/v1/jobs/{job_id}/report`)**:
-    *   The frontend polls for job status.
-    *   Once `COMPLETED`, the frontend requests the report URL.
-    *   The API validates the request and serves the report back to the user.
+The first phase maps the Monday.com account, classifies compatibility, and generates the Markdown report.
 
-## 2. GCP Services Usage
+### Triggering the Workload
+*   **Production (GCP):** `src/api/job_routes.py` calls the Cloud Run API using the GCP SDK to trigger a standalone **Cloud Run Job**. This ensures the heavy discovery workload is entirely decoupled from the web-server CPU.
+*   **Local Bypass:** Since `DISCOVERY_JOB_NAME` is absent locally, FastAPI falls back to injecting the `execute_discovery_job` function into **BackgroundTasks**. The work happens concurrently within the web server process.
 
-Both the local and deployed environments rely on GCP services, but they authenticate and orchestrate them differently.
+### Report Download & Delivery
+*   **Production (GCP):** The API generates a **Signed URL** using the Cloud Run Service Account's private key. The frontend downloads the report directly from Google Cloud Storage, bypassing the FastAPI server completely to save bandwidth.
+*   **Local Bypass:** Local Application Default Credentials (ADC) cannot sign URLs securely. The API gracefully falls back to a proxy mechanism—it downloads the file from GCS into memory (`blob.download_as_bytes()`) and serves it directly as an HTTP Response to the browser.
 
-| Service | Used Locally? | Used in Production? | Details |
-| :--- | :--- | :--- | :--- |
-| **Secret Manager** | ✅ Yes | ✅ Yes | Used to store and retrieve Monday.com API keys securely without logging them. |
-| **Firestore** | ✅ Yes | ✅ Yes | Used as the state store for `job_id` tracking, statuses, and metadata. |
-| **Cloud Storage** | ✅ Yes | ✅ Yes | Used to persist the generated Markdown reports (`pre_migration_report.md`). |
-| **Cloud Run (API)** | ❌ No (FastAPI + Uvicorn) | ✅ Yes | Hosts the FastAPI backend as a persistent service. |
-| **Cloud Run Jobs** | ❌ No (FastAPI Background Task) | ✅ Yes | Executes the heavy discovery/migration workloads asynchronously. |
+---
 
-## 3. The Local Development Bypasses
+## Phase 3: Execution & Orchestration
 
-When running locally (via `start_local.sh`), the system leverages Application Default Credentials (ADC) via `gcloud auth application-default login` and bypasses certain production orchestrations.
+The third phase handles writing the discovered objects to the destination account while navigating strict rate limits and dependency graphs (Workspaces -> Boards -> Groups, etc.).
 
-### A. Async Execution Bypass
-*   **Production**: `routes.py` calls the Cloud Run API to trigger a standalone **Cloud Run Job** for the discovery phase. This ensures the workload is isolated and doesn't consume the web server's resources.
-*   **Local**: Since the `DISCOVERY_JOB_NAME` environment variable is not set locally, `routes.py` falls back to injecting the `execute_discovery_job` function into the FastAPI **BackgroundTasks**. The work happens in the same process as the web server.
+### State & Idempotency
+*   **Both Environments:** To prevent duplicate entities during network retries, an ID map (`jobs/{job_id}/id_map/{entity_type}_{source_id}`) is stored in **Firestore**. Every creation mutation queries this map before proceeding. Local and Prod both execute this using standard Firestore Document SDK calls.
 
-### B. Report Download Bypass
-*   **Production**: When downloading the report, the API generates a **Signed URL** using the Cloud Run Service Account's private key. This allows the frontend to download the report directly from GCS via a secure, time-limited link, completely bypassing the FastAPI server for bandwidth.
-*   **Local**: ADC credentials used locally provide a token, but *not* a private key. Thus, local ADC cannot generate a Signed URL. 
-*   **The Fix/Fallback**: When signed URL generation fails, the API gracefully falls back to proxying the file. The FastAPI backend downloads the file from GCS into memory (`blob.download_as_bytes()`) and serves it directly as a standard HTTP Response (`Response(content, media_type="text/markdown")`).
+### Queueing & DAG Routing (Cloud Tasks)
+*   **Production (GCP):** The `OrchestratorEngine` parses the inventory into a strict DAG and dispatches the workloads as HTTP POST payloads into dedicated **Cloud Tasks Queues** (`migration-workspaces`, `migration-boards`, etc.). Cloud Tasks natively limits concurrency via `max_dispatches_per_second`.
+*   **Local Bypass:** Currently, testing Cloud Tasks locally requires pointing the Orchestrator to a mocked queue or running it sequentially.
 
-## 4. Authentication Mechanism
+### Rate Limiting (Token Bucket)
+*   **Both Environments:** Monday.com tracks "complexity points." We manage this via a transactional **Token Bucket** in Firestore (`jobs/{job_id}/state/complexity_bucket`). 
+    *   **Proactive Throttle:** `src/api/worker_routes.py` estimates the cost of an operation and attempts to deduct tokens. If the budget is exhausted, it immediately returns an **HTTP 429** back to Cloud Tasks, triggering a native queue pause.
+    *   **Reactive Sync:** When the `MondayClient` successfully executes a query, it reads the live `complexity` metadata from the response and updates the Firestore bucket directly, keeping local approximations tightly calibrated to reality.
 
-*   **Local**: Relies entirely on your user account credentials configured via `gcloud auth application-default login`. Your user account must have permissions to read/write to Secret Manager, Firestore, and GCS in the specified `PROJECT_ID`.
-*   **Production**: Authenticates using dedicated **Service Accounts** configured via Terraform (`terraform/main.tf`). The Cloud Run web service uses one service account (with permissions to trigger jobs), while the Cloud Run Job uses another (with permissions to execute the discovery).
-
-## 5. Execution Orchestration (Phase 3 & Beyond)
-
-As the project transitions from read-only Discovery into the Execution phase (writing data to the destination account), the architecture introduces new infrastructure components to handle scale, dependency ordering, and rate limits.
-
-### A. State & Idempotency (Firestore)
-*   To ensure mutations are idempotent and relationships (e.g., items within a specific group) are preserved, the system maintains an ID map.
-*   **Structure**: For every created entity, a mapping of `source_id -> dest_id` is stored in Firestore, typically as a subcollection under the main job document (e.g., `jobs/{job_id}/id_map`).
-*   **Idempotency Checks**: Before executing any create mutation, the execution engine queries this `id_map` collection. If a `dest_id` already exists for the given `source_id`, the creation is safely bypassed.
-
-### B. Cloud Tasks & DAG Gating
-*   **DAG Builder**: The orchestrator parses the discovery inventory and builds a Directed Acyclic Graph (DAG) of creation tasks respecting monday.com's strict hierarchy (Workspace → Board → Group → Column → Item → Subitem → Update).
-*   **Queues**: Tasks are pushed to GCP Cloud Tasks queues dedicated to specific stages. These queues enforce `max_dispatches_per_second` to provide a coarse hardware-level rate limit.
-*   **Gating**: A stage (e.g., Groups) cannot begin execution until the upstream stage (e.g., Boards) is 100% complete. This is managed via Pub/Sub events or Firestore listeners that monitor the completion status of queued tasks and trigger the next stage.
-*   **Local Bypass**: When running locally without Cloud Tasks provisioning, the orchestrator executes tasks sequentially or via local async queues (`asyncio.Queue`), mocking the Cloud Tasks dispatch mechanism to maintain developer velocity.
+### Stage Gating
+*   **Both Environments:** A strict DAG requires that the `workspaces` stage completes before `boards` begins. The Orchestrator registers the total expected tasks per stage in Firestore (`jobs/{job_id}/dag_state/{stage}`). As each FastAPI worker finishes a mutation, it transactionally decrements this counter. When it hits zero, it triggers the enqueue loop for the subsequent stage.

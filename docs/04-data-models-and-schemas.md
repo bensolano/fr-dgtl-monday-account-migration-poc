@@ -31,31 +31,35 @@
 }
 ```
 
-### `jobs/{job_id}/id_map/{source_object_id}`
+### `jobs/{job_id}/id_map/{entity_type}_{source_id}`
 ```
 {
   source_id: string,
-  dest_id: string | null,     // null until created
-  object_type: string,
-  status: "pending" | "in_progress" | "done" | "failed_transient"
-        | "failed_permanent" | "skipped" | "rolled_back",
-  retry_count: number,
-  last_error: string | null,
-  updated_at: timestamp
+  dest_id: string,
+  entity_type: "workspace" | "board" | "group" | "column" | "item",
+  created_at: timestamp
 }
 ```
-This table is the idempotency check (query before create) *and* the
-exportable deliverable operators use to patch up mirror/connect columns
-after the fact.
+This table serves as the primary idempotency check. It is queried before any create mutation and populated immediately upon success.
 
-### `jobs/{job_id}/scope`
+### `jobs/{job_id}/state/complexity_bucket`
 ```
 {
-  confirmed_at: timestamp,
-  included_object_ids: [string],   // explicit allow-list from the tree UI
-  excluded_object_ids: [string]
+  remaining_tokens: number,
+  last_reset: timestamp
 }
 ```
+Replaces the proposed in-memory rate limiter with a global, transactional Token Bucket in Firestore. It is actively decremented proactively by the Cloud Tasks workers (e.g. `consume_budget`) and reactively resynced with the exact metadata returned from the Monday.com GraphQL API.
+
+### `jobs/{job_id}/dag_state/{stage}`
+```
+{
+  total_tasks: number,
+  completed_tasks: number,
+  status: "pending" | "completed"
+}
+```
+This schema gates the execution DAG. Initialized by the orchestrator before execution, tasks increment `completed_tasks` transactionally. When the counter reaches `total_tasks`, the orchestrator queues the subsequent stage.
 
 ## 2. BigQuery
 
