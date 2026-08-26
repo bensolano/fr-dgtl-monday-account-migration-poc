@@ -73,7 +73,7 @@
 *   Implemented Stage Gating in `StateManager` using Firestore transactions (`initialize_dag_state`, `mark_task_complete`). The orchestrator seeds the task counters per stage, and worker routes decrement them upon success, firing an event when a stage hits zero to continue DAG execution.
 *   Added `POST /api/v1/jobs/{job_id}/execute` to `job_routes.py` to formally trigger Phase 3 Execution. This reads the saved `inventory.json` from GCS, builds the DAG, saves it to `dag.json`, and enqueues the first valid stage to Cloud Tasks.
 *   Wired up the stage gating cascade in `worker_routes.py` so that finishing the final task of a stage pulls the DAG and dynamically enqueues the next stage sequentially.
+*   Updated the React Frontend (`frontend/src/App.tsx`) to support Phase 3. Added the "Confirm & Execute Migration" button, the polling loop for `EXECUTING`, and the terminal `MIGRATION_COMPLETED` status view.
 
 **Next Up:**
 *   **Phase 4 (Reporting & Ops):** BigQuery events table, final execution actuals vs plan, and Cloud Scheduler purges.
-*   Update the React frontend UI to support launching migrations, selecting scopes, and displaying execution status (currently it only displays discovery report downloads).

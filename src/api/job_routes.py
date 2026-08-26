@@ -236,6 +236,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
         ) from e
 
 
+@job_router.get("/{job_id}/report")
 async def get_job_report(job_id: str) -> RedirectResponse | Any:
     """
     Generates a secure download link for the completed migration report.

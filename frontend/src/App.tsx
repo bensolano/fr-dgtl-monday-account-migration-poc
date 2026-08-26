@@ -16,7 +16,9 @@ function App() {
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     
-    if (jobId && (jobStatus === 'PENDING' || jobStatus === 'RUNNING')) {
+    const isPollingStatus = jobStatus === 'PENDING' || jobStatus === 'RUNNING' || jobStatus === 'EXECUTING';
+
+    if (jobId && isPollingStatus) {
       interval = setInterval(async () => {
         try {
           const response = await axios.get(`${API_BASE_URL}/jobs/${jobId}/status`);
@@ -50,11 +52,21 @@ function App() {
     }
   };
 
+  const startMigrationExecution = async () => {
+    if (!jobId) return;
+    setError(null);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/jobs/${jobId}/execute`);
+      setJobStatus(response.data.status);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.message || 'Error starting execution');
+    }
+  };
+
   const downloadReport = async () => {
     if (!jobId) return;
     
     try {
-      // In a real app we'd get a signed URL or handle binary download properly
       const response = await axios.get(`${API_BASE_URL}/jobs/${jobId}/report`, {
         responseType: 'blob',
       });
@@ -112,12 +124,30 @@ function App() {
             <div className="spinner">Discovery in progress...</div>
           )}
 
+          {jobStatus === 'EXECUTING' && (
+            <div className="spinner">Migration execution in progress... check GCP logs for real-time Cloud Tasks telemetry.</div>
+          )}
+
           {jobStatus === 'COMPLETED' && (
             <div>
               <p className="success">Discovery completed successfully!</p>
-              <button onClick={downloadReport} className="download-btn">
-                Download Report (Markdown)
+              <div className="action-buttons">
+                <button onClick={downloadReport} className="download-btn">
+                  Download Discovery Report
+                </button>
+                <button onClick={startMigrationExecution} className="execute-btn" style={{backgroundColor: '#e63946', color: 'white', marginLeft: '10px'}}>
+                  Confirm & Execute Migration
+                </button>
+              </div>
+              <button onClick={() => setJobId(null)} className="reset-btn" style={{marginTop: '20px'}}>
+                Start New Job
               </button>
+            </div>
+          )}
+
+          {jobStatus === 'MIGRATION_COMPLETED' && (
+            <div>
+              <p className="success">Migration completed successfully!</p>
               <button onClick={() => setJobId(null)} className="reset-btn">
                 Start New Job
               </button>
