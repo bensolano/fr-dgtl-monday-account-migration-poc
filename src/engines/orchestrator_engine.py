@@ -92,15 +92,70 @@ class OrchestratorEngine:
         state_manager = StateManager(self.project_id)
         state_manager.initialize_dag_state(job_id, dag)
 
+        # Upload the DAG to GCS so workers can access it for the next stages
+        from google.cloud import storage
+
+        storage_client = storage.Client(project=self.project_id)
+        bucket_name = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(f"reports/{job_id}/dag.json")
+        blob.upload_from_string(json.dumps(dag), content_type="application/json")
+        logger.info(f"Saved DAG for job {job_id} to GCS.")
+
         # Phase 3: Enqueue only the first valid stage to kick off the DAG
-        for stage in self.stage_order:
+        self.enqueue_next_stage(job_id, current_stage=None)
+
+    def enqueue_next_stage(self, job_id: str, current_stage: str | None = None) -> None:
+        """
+        Enqueues the next valid stage of the DAG after the current stage completes.
+
+        Args:
+            job_id: The job ID.
+            current_stage: The stage that just finished (None if starting).
+        """
+        if not self.tasks_client:
+            return
+
+        # Download the DAG from GCS
+        from google.cloud import storage
+
+        storage_client = storage.Client(project=self.project_id)
+        bucket_name = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(f"reports/{job_id}/dag.json")
+
+        if not blob.exists():
+            logger.error(
+                f"Cannot enqueue next stage for {job_id}. DAG not found in GCS."
+            )
+            return
+
+        dag = json.loads(blob.download_as_string())
+
+        # Find the next stage in the order
+        start_idx = 0
+        if current_stage:
+            try:
+                start_idx = self.stage_order.index(current_stage) + 1
+            except ValueError:
+                logger.error(f"Unknown stage {current_stage} completed.")
+                return
+
+        for i in range(start_idx, len(self.stage_order)):
+            stage = self.stage_order[i]
             tasks = dag.get(stage, [])
             if tasks:
                 logger.info(
-                    f"Kicking off DAG for job {job_id} by enqueueing {len(tasks)} tasks to stage '{stage}'."
+                    f"Enqueuing next DAG stage: '{stage}' with {len(tasks)} tasks."
                 )
                 self._enqueue_stage(job_id, stage, tasks)
-                break  # Only start the first non-empty stage to enforce DAG dependency order
+                return
+
+        # If we reach here, the DAG is entirely complete.
+        from src.engines.job_engine import set_job_status
+
+        set_job_status(job_id, "MIGRATION_COMPLETED")
+        logger.info(f"DAG Execution completely finished for job {job_id}.")
 
     def _enqueue_stage(
         self, job_id: str, stage: str, tasks: list[dict[str, Any]]

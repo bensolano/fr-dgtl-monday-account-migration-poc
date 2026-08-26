@@ -90,15 +90,34 @@ async def execute_discovery_job(job_id: str):
         local_report_path = f"/tmp/{job_id}_report.md"
         report_generator.save_report(report_md, file_path=local_report_path)
 
+        # Save classified inventory locally for upload
+        import json
+
+        local_classified_path = f"/tmp/{job_id}_classified_inventory.json"
+        with open(local_classified_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
+            json.dump(classified_inventory, f, indent=2)
+
         # 5. Upload to Cloud Storage
         report_gcs_path = None
         if storage_client:
             bucket = storage_client.bucket(REPORTS_BUCKET)
-            blob_name = f"reports/{job_id}/pre_migration_report.md"
-            blob = bucket.blob(blob_name)
-            blob.upload_from_filename(local_report_path)
-            report_gcs_path = blob_name
-            logger.info(f"Uploaded report to GCS: gs://{REPORTS_BUCKET}/{blob_name}")
+
+            # Upload Report
+            report_blob_name = f"reports/{job_id}/pre_migration_report.md"
+            report_blob = bucket.blob(report_blob_name)
+            report_blob.upload_from_filename(local_report_path)
+            report_gcs_path = report_blob_name
+            logger.info(
+                f"Uploaded report to GCS: gs://{REPORTS_BUCKET}/{report_blob_name}"
+            )
+
+            # Upload Classified Inventory
+            inventory_blob_name = f"reports/{job_id}/inventory.json"
+            inventory_blob = bucket.blob(inventory_blob_name)
+            inventory_blob.upload_from_filename(local_classified_path)
+            logger.info(
+                f"Uploaded inventory to GCS: gs://{REPORTS_BUCKET}/{inventory_blob_name}"
+            )
 
         set_job_status(job_id, "COMPLETED", report_path=report_gcs_path)
         logger.info(f"Discovery job {job_id} completed successfully.")

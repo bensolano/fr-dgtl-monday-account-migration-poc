@@ -173,7 +173,69 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
     return JobStatusResponse(job_id=job_id, status=job_data.get("status", "UNKNOWN"))
 
 
-@job_router.get("/{job_id}/report")
+@job_router.post("/{job_id}/execute")
+async def execute_job(job_id: str) -> dict[str, str]:
+    """
+    Triggers the actual migration execution (Phase 3) for a previously discovered job.
+    Downloads the inventory, builds the DAG, and enqueues the first stage to Cloud Tasks.
+
+    Args:
+        job_id (str): The unique identifier of the job to execute.
+
+    Returns:
+        dict[str, str]: Status payload.
+
+    Raises:
+        HTTPException: If the job is not ready or the inventory cannot be found.
+    """
+    import json
+
+    from src.engines.orchestrator_engine import OrchestratorEngine
+
+    job_data = get_job(job_id)
+    if not job_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job_data.get("status") not in ["COMPLETED", "SCOPE_CONFIRMED"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Job must be COMPLETED (discovery done) before executing.",
+        )
+
+    if not storage_client:
+        raise HTTPException(status_code=500, detail="Storage client unconfigured.")
+
+    try:
+        bucket = storage_client.bucket(REPORTS_BUCKET)
+        inventory_blob = bucket.blob(f"reports/{job_id}/inventory.json")
+
+        if not inventory_blob.exists():
+            raise HTTPException(
+                status_code=404, detail="Classified inventory not found in GCS."
+            )
+
+        inventory_data = json.loads(inventory_blob.download_as_string())
+
+        orchestrator = OrchestratorEngine()
+        dag = orchestrator.build_dag(inventory_data)
+
+        set_job_status(job_id, "EXECUTING")
+
+        orchestrator.enqueue_dag(job_id, dag)
+
+        return {
+            "status": "EXECUTING",
+            "message": "Migration DAG built and enqueued to Cloud Tasks.",
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to execute DAG for job {job_id}: {e}")
+        set_job_status(job_id, "FAILED", error=str(e))
+        raise HTTPException(
+            status_code=500, detail="Failed to start migration execution."
+        ) from e
+
+
 async def get_job_report(job_id: str) -> RedirectResponse | Any:
     """
     Generates a secure download link for the completed migration report.

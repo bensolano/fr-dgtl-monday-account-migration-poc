@@ -164,7 +164,11 @@ async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResp
             logger.info(
                 f"Stage '{plural_stage}' for job {job_id} is completely finished!"
             )
-            # In a full implementation, you would enqueue the *next* stage here, e.g. using OrchestratorEngine
+            # Instantiate the orchestrator to trigger the next stage
+            from src.engines.orchestrator_engine import OrchestratorEngine
+
+            orchestrator = OrchestratorEngine()
+            orchestrator.enqueue_next_stage(job_id, current_stage=plural_stage)
 
         return {"status": "success", "dest_id": dest_id}
 
