@@ -54,6 +54,12 @@ resource "google_project_iam_member" "api_run_invoker" {
   member  = "serviceAccount:${google_service_account.api_sa.email}"
 }
 
+resource "google_project_iam_member" "api_run_jobs_executor" {
+  project = var.project_id
+  role    = "roles/run.jobsExecutorWithOverrides"
+  member  = "serviceAccount:${google_service_account.api_sa.email}"
+}
+
 resource "google_project_iam_member" "api_secret_creator" {
   project = var.project_id
   role    = "roles/secretmanager.secretAccessor"

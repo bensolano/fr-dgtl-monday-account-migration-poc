@@ -1,21 +1,29 @@
 steps:
-  # 1. Build API & Job Image (Shared Codebase)
+  # 1. Build API Image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:$COMMIT_SHA', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:latest', '-f', 'Dockerfile.api', '.']
   
-  # 2. Push API & Job Image
+  # 2. Push API Image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api']
 
-  # 3. Build Frontend Portal Image
+  # 3. Build Job Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/job:$COMMIT_SHA', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/job:latest', '-f', 'Dockerfile.job', '.']
+  
+  # 4. Push Job Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/job']
+
+  # 5. Build Frontend Portal Image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal:$COMMIT_SHA', '-t', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal:latest', '-f', 'Dockerfile.frontend', '.']
   
-  # 4. Push Frontend Portal Image
+  # 6. Push Frontend Portal Image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/portal']
 
-  # 5. Deploy Discovery Job to Cloud Run Jobs
+  # 7. Deploy Discovery Job to Cloud Run Jobs
   # Notice the --service-account flag linking the job to the Terraform-created SA
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -25,19 +33,17 @@ steps:
       - 'deploy'
       - 'migration-discovery-job'
       - '--image'
-      - '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/api:latest'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/migration-repo/job:latest'
       - '--region'
       - '$_REGION'
       - '--service-account'
       - 'migration-job-sa@$PROJECT_ID.iam.gserviceaccount.com'
       - '--set-env-vars'
       - 'PROJECT_ID=$PROJECT_ID,REPORTS_BUCKET=$PROJECT_ID-migration-reports'
-      - '--command'
-      - 'uv'
-      - '--args'
-      - 'run,python,main.py' # Override the uvicorn default command to run the batch script instead
+      - '--clear-command'
+      - '--clear-args'
 
-  # 6. Deploy API Service to Cloud Run
+  # 8. Deploy API Service to Cloud Run
   # Notice the --service-account flag linking the API to the Terraform-created SA
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
