@@ -68,7 +68,8 @@
 *   Refactored FastAPI route structure to separate concerns: `job_routes.py` for Discovery triggers and `worker_routes.py` for DAG execution, orchestrated by `src/api/main.py`.
 *   Implemented `TokenBucket` proactive rate limiting in `StateManager` using Firestore transactions.
 *   Modified `MondayClient._execute_query_with_retries` to support `distributed=True`, returning complexity metadata and raising `MondayRateLimitError` to leverage Cloud Tasks native backoff instead of localized `asyncio.sleep`.
+*   Implemented `ExecutionEngine` (`src/engines/execution_engine.py`) to map source payloads (workspaces, boards, groups, columns, items) into explicit Monday.com GraphQL creation mutations.
+*   Updated FastAPI worker routes (`src/api/worker_routes.py`) to fetch the `dest_api_key` securely, instantiate the `ExecutionEngine`, and sync complexity budgets post-execution.
 
 **Next Up:**
-*   **Phase 3 (Execution Mutations):** Implement the actual GraphQL creation mutations inside `worker_routes.py` (Workspaces, Boards, Groups, Columns, Items).
-*   Implement stage gating (listening for queue depletion to enqueue the next DAG stage via Pub/Sub or Firestore listeners).
+*   **Phase 3 (Stage Gating):** Implement stage gating (listening for queue depletion to enqueue the next DAG stage via Pub/Sub or Firestore listeners).
