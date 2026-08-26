@@ -51,6 +51,7 @@ Based on our reference architecture, enforce the following implementation standa
 *   **Pagination Standards:** Standardize cursor pagination limit at 500 items per request, using `items_page` for the initial query and `next_items_page` for subsequent cursor fetches.
 
 ## 7. Code Quality & Formatting
+*   **Python Syntax:** Enforce the use of modern Python 3.12+ syntax and typing features (e.g., modern type hinting without `Optional`/`Union` where appropriate, `match`/`case` statements, f-strings, etc.).
 *   **Ruff:** This project uses `ruff` for all Python linting and formatting.
 *   **Mandatory Step:** At the end of *every* implementation step or file modification, you MUST run `uv run ruff check --fix .`, `uv run ruff format .`, and `uv run pytest` before concluding the turn.
 
@@ -64,7 +65,8 @@ Based on our reference architecture, enforce the following implementation standa
 
 ## 10. Session Tracking
 *   **Mandatory Update:** At the end of every significant implementation step or completed phase, you MUST update `docs/06-session-tracking.md` with the date, decisions made, the current state of work, and next steps.
-*   **Git Sync:** Keep the session tracker aligned with git history and the project roadmap.
+*   **Roadmap Sync:** Along with the session tracker, `docs/03-implementation-roadmap.md` MUST be kept up to date by checking off completed items and modifying the plan when moving forward.
+*   **Git Sync:** Keep the session tracker and roadmap aligned with git history.
 
 ## 11. Architecture Documentation
 *   **Keep Architecture Updated:** Whenever architectural decisions are made, new infrastructure is introduced, or we transition between local and production implementations, you MUST update `docs/08-local-vs-prod-architecture.md` to reflect the current state. This ensures our architectural blueprints remain accurate as the plan evolves.
