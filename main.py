@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-from src.engines.job_engine import execute_discovery_job
+from src.engines.job_engine import JobEngine
 
 # Configure standard logging to output to stdout
 logging.basicConfig(
@@ -41,7 +41,8 @@ async def main() -> None:
         sys.exit(1)
 
     logger.info(f"--- BATCH JOB STARTED FOR JOB_ID: {job_id} ---")
-    await execute_discovery_job(job_id)
+    engine = JobEngine()
+    await engine.execute_discovery_job(job_id)
     logger.info("--- BATCH JOB FINISHED ---")
 
 

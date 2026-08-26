@@ -9,11 +9,12 @@ from fastapi.responses import RedirectResponse
 from google.cloud import run_v2, secretmanager, storage
 
 from src.api.models import JobCreateRequest, JobCreateResponse, JobStatusResponse
-from src.engines.job_engine import execute_discovery_job, get_job, set_job_status
+from src.engines.job_engine import JobEngine
 
 logger = logging.getLogger(__name__)
 
 job_router = APIRouter()
+job_engine = JobEngine()
 
 PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
 REGION = os.environ.get("REGION", "europe-west1")
@@ -62,7 +63,7 @@ def trigger_cloud_run_job(job_id: str) -> None:
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to trigger Cloud Run Job for {job_id}: {e}")
-        set_job_status(
+        job_engine.set_job_status(
             job_id, "FAILED", error="Failed to start background job infrastructure."
         )
 
@@ -129,7 +130,7 @@ async def create_job(
             ) from e
 
     # Init state in Firestore
-    set_job_status(job_id, "PENDING")
+    job_engine.set_job_status(job_id, "PENDING")
 
     if DISCOVERY_JOB_NAME and run_client:
         # PRODUCTION: Trigger actual GCP Cloud Run Job
@@ -137,7 +138,7 @@ async def create_job(
         msg = "Cloud Run job triggered."
     else:
         # LOCAL DEVELOPMENT: Fallback to running it in the background of the FastAPI process
-        background_tasks.add_task(execute_discovery_job, job_id)
+        background_tasks.add_task(job_engine.execute_discovery_job, job_id)
         msg = "Local background task started."
 
     return JobCreateResponse(
@@ -161,12 +162,10 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
     Raises:
         HTTPException: If the job cannot be found in the datastore.
     """
-    job_data = get_job(job_id)
+    job_data = job_engine.get_job(job_id)
     if not job_data:
         # Fallback logic for local testing without firestore
-        from src.engines.job_engine import db  # Import here to check local db state
-
-        if not db:
+        if not job_engine.has_firestore():
             return JobStatusResponse(job_id=job_id, status="PENDING")
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -192,7 +191,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
 
     from src.engines.orchestrator_engine import OrchestratorEngine
 
-    job_data = get_job(job_id)
+    job_data = job_engine.get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -219,7 +218,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
         orchestrator = OrchestratorEngine()
         dag = orchestrator.build_dag(inventory_data)
 
-        set_job_status(job_id, "EXECUTING")
+        job_engine.set_job_status(job_id, "EXECUTING")
 
         orchestrator.enqueue_dag(job_id, dag)
 
@@ -230,7 +229,7 @@ async def execute_job(job_id: str) -> dict[str, str]:
 
     except Exception as e:
         logger.error(f"Failed to execute DAG for job {job_id}: {e}")
-        set_job_status(job_id, "FAILED", error=str(e))
+        job_engine.set_job_status(job_id, "FAILED", error=str(e))
         raise HTTPException(
             status_code=500, detail="Failed to start migration execution."
         ) from e
@@ -250,7 +249,7 @@ async def get_job_report(job_id: str) -> RedirectResponse | Any:
     Raises:
         HTTPException: If the job is not completed, not found, or the report is missing.
     """
-    job_data = get_job(job_id)
+    job_data = job_engine.get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
