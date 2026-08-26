@@ -167,16 +167,32 @@ async def get_job_report(job_id: str):
         bucket = storage_client.bucket(REPORTS_BUCKET)
         blob = bucket.blob(report_gcs_path)
 
-        # Generate a signed URL for the frontend to download directly
-        signed_url = blob.generate_signed_url(
-            version="v4",
-            expiration=datetime.timedelta(minutes=15),
-            method="GET",
-        )
-        # Redirect the user's browser directly to the signed URL
-        return RedirectResponse(url=signed_url)
+        # Attempt to generate a signed URL (Works in production with Service Account)
+        try:
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=datetime.timedelta(minutes=15),
+                method="GET",
+            )
+            # Redirect the user's browser directly to the signed URL
+            return RedirectResponse(url=signed_url)
+        except Exception as signing_error:  # noqa: BLE001
+            logger.warning(
+                f"Failed to generate signed URL (likely local dev with ADC): {signing_error}. Falling back to direct download."
+            )
+            # Fallback for local development using ADC token
+            from fastapi.responses import Response
+
+            content = blob.download_as_bytes()
+            return Response(
+                content=content,
+                media_type="text/markdown",
+                headers={
+                    "Content-Disposition": f'attachment; filename="report_{job_id}.md"'
+                },
+            )
     except Exception as e:
-        logger.error(f"Failed to generate signed URL: {e}")
+        logger.error(f"Failed to retrieve report: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to generate download link"
+            status_code=500, detail="Failed to retrieve report from storage"
         ) from e

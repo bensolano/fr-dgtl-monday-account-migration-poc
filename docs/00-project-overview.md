@@ -80,6 +80,7 @@ the middle.
   payload shapes, ID-mapping table structure.
 - `05-resume-and-rollback.md` — shared resume/rollback subsystem built
   on the ID-mapping state store.
+- `08-local-vs-prod-architecture.md` — details the execution flow, GCP services used/bypassed locally, and the differences between ADC and Service Account authentication.
 
 An implementing AI/engineer should read all four before writing code —
 the capability matrix and data models directly shape the orchestrator

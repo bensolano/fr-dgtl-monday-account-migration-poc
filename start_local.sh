@@ -8,8 +8,8 @@ echo "=================================================="
 # Provide default mock values for local development if they aren't already set.
 # In a deployed environment, these are injected automatically by Cloud Run
 # based on our Terraform configuration (see terraform/main.tf).
-export PROJECT_ID="${PROJECT_ID:-local-dev-project}"
-export REPORTS_BUCKET="${REPORTS_BUCKET:-local-dev-reports-bucket}"
+export PROJECT_ID="${PROJECT_ID:-sandbox-bsolano}"
+export REPORTS_BUCKET="${REPORTS_BUCKET:-sandbox-bsolano-migration-reports}"
 
 echo "Environment Variables (Simulating Cloud Run env):"
 echo "  PROJECT_ID     = $PROJECT_ID"
