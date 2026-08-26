@@ -25,6 +25,19 @@ except Exception as e:  # noqa: BLE001
 
 
 def get_dest_api_key(job_id: str) -> str:
+    """
+    Retrieves the destination Monday.com API key for a given job from Secret Manager.
+
+    Args:
+        job_id (str): The unique identifier of the migration job.
+
+    Returns:
+        str: The decoded API key.
+
+    Raises:
+        RuntimeError: If the Secret Manager client is not initialized.
+        HTTPException: If retrieving the secret fails.
+    """
     if not secret_client:
         raise RuntimeError("Secret Manager client is not initialized.")
     secret_name = f"projects/{PROJECT_ID}/secrets/job-{job_id}-dest-key/versions/latest"
@@ -38,11 +51,50 @@ def get_dest_api_key(job_id: str) -> str:
         ) from e
 
 
+def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
+    """
+    Estimates the GraphQL complexity cost of creating an entity.
+    This allows the Token Bucket to proactively rate limit based on realistic payload weights.
+
+    Args:
+        entity_type (str): The type of the entity (workspace, board, group, column, item).
+        payload (dict[str, Any]): The payload data for the entity.
+
+    Returns:
+        int: The estimated complexity cost in points.
+    """
+    base_costs = {
+        "workspace": 1000,
+        "board": 5000,
+        "group": 500,
+        "column": 1000,
+        "item": 10,
+    }
+
+    cost = base_costs.get(entity_type, 1000)
+
+    # Example heuristic: items with lots of column values cost more
+    if entity_type == "item" and "column_values" in payload:
+        cost += len(payload["column_values"]) * 10
+
+    return cost
+
+
 @worker_router.post("/{stage}")
 async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResponse:
     """
     Cloud Tasks HTTP webhook handler.
-    Receives tasks from the queues, checks idempotency, and applies mutations.
+    Receives tasks from the queues, checks idempotency, enforces rate limits, and applies mutations.
+
+    Args:
+        stage (str): The DAG stage currently being executed (e.g., 'boards', 'items').
+        request (Request): The incoming FastAPI HTTP request containing the Cloud Task payload.
+
+    Returns:
+        dict[str, Any] | JSONResponse: A success dict or an HTTP 429 JSONResponse for rate limiting.
+
+    Raises:
+        HTTPException: If the payload is invalid, missing required fields, or execution fails.
     """
     try:
         payload = await request.json()
@@ -73,10 +125,10 @@ async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResp
         return {"status": "skipped", "reason": "idempotent"}
 
     # 2. Proactive Rate Limiting (Token Bucket)
-    estimated_cost = 50000
+    estimated_cost = estimate_complexity(entity_type, entity_payload)
     if not state_manager.consume_budget(job_id, estimated_cost):
         logger.warning(
-            f"Insufficient complexity budget for {entity_type}. Yielding 429 to Cloud Tasks."
+            f"Insufficient complexity budget ({estimated_cost} required) for {entity_type}. Yielding 429 to Cloud Tasks."
         )
         # Return HTTP 429 to tell Cloud Tasks to back off and requeue natively
         return JSONResponse(

@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import RedirectResponse
@@ -33,8 +34,13 @@ except Exception as e:  # noqa: BLE001
     run_client = None
 
 
-def trigger_cloud_run_job(job_id: str):
-    """Triggers the Cloud Run batch job using the GCP SDK."""
+def trigger_cloud_run_job(job_id: str) -> None:
+    """
+    Triggers the Cloud Run batch job using the GCP SDK.
+
+    Args:
+        job_id (str): The unique identifier of the job to execute.
+    """
     if not run_client or not DISCOVERY_JOB_NAME:
         logger.warning(
             f"Cloud Run Job client or DISCOVERY_JOB_NAME not configured. Cannot trigger job {job_id}."
@@ -62,7 +68,22 @@ def trigger_cloud_run_job(job_id: str):
 
 
 @job_router.post("", response_model=JobCreateResponse)
-async def create_job(request: JobCreateRequest, background_tasks: BackgroundTasks):
+async def create_job(
+    request: JobCreateRequest, background_tasks: BackgroundTasks
+) -> JobCreateResponse:
+    """
+    Creates a new migration job, secures API keys in Secret Manager, and triggers execution.
+
+    Args:
+        request (JobCreateRequest): The request payload containing source/destination API keys.
+        background_tasks (BackgroundTasks): FastAPI background tasks manager for local fallback.
+
+    Returns:
+        JobCreateResponse: The created job details including status and ID.
+
+    Raises:
+        HTTPException: If API keys fail to secure in Secret Manager.
+    """
     job_id = str(uuid.uuid4())
 
     # Secure API Keys in Secret Manager
@@ -127,7 +148,19 @@ async def create_job(request: JobCreateRequest, background_tasks: BackgroundTask
 
 
 @job_router.get("/{job_id}/status", response_model=JobStatusResponse)
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str) -> JobStatusResponse:
+    """
+    Retrieves the current execution status of a specific job.
+
+    Args:
+        job_id (str): The unique identifier of the job.
+
+    Returns:
+        JobStatusResponse: The status payload.
+
+    Raises:
+        HTTPException: If the job cannot be found in the datastore.
+    """
     job_data = get_job(job_id)
     if not job_data:
         # Fallback logic for local testing without firestore
@@ -141,7 +174,19 @@ async def get_job_status(job_id: str):
 
 
 @job_router.get("/{job_id}/report")
-async def get_job_report(job_id: str):
+async def get_job_report(job_id: str) -> RedirectResponse | Any:
+    """
+    Generates a secure download link for the completed migration report.
+
+    Args:
+        job_id (str): The unique identifier of the job.
+
+    Returns:
+        RedirectResponse | Response: Redirects to a signed GCS URL or streams the file locally.
+
+    Raises:
+        HTTPException: If the job is not completed, not found, or the report is missing.
+    """
     job_data = get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
