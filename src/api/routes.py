@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 from google.cloud import run_v2, secretmanager, storage
 
 from src.api.models import JobCreateRequest, JobCreateResponse, JobStatusResponse
+from src.api.worker_routes import worker_router
 from src.engines.job_engine import execute_discovery_job, get_job, set_job_status
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(worker_router, prefix="/api/v1/worker", tags=["worker"])
 
 PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
 REGION = os.environ.get("REGION", "europe-west1")

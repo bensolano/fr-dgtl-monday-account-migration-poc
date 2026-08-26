@@ -64,8 +64,8 @@
 *   Implemented `OrchestratorEngine` (`src/engines/orchestrator_engine.py`) to parse classified inventories into a staged DAG, properly filtering out `manual_only` tasks and enforcing execution order.
 *   Updated `terraform/main.tf` to provision dedicated Cloud Tasks queues for Phase 3 Execution (Workspaces, Boards, Groups, Columns, Items).
 *   Added `google-cloud-tasks` client library and updated `OrchestratorEngine.enqueue_dag` to push the first stage of valid items directly to GCP queues.
+*   Implemented FastAPI worker endpoints (`src/api/worker_routes.py`) to receive Cloud Tasks payloads and execute the required idempotency checks via `StateManager`.
 
 **Next Up:**
-*   **Phase 3 (Task Handlers):** Implement the `POST /api/v1/worker/{stage}` FastAPI endpoints to act as the Cloud Task workers.
-*   Implement token-bucket rate limiter.
+*   **Phase 3 (Rate Limiting & Execution):** Implement the Token-Bucket rate limiter inside the worker endpoints using complexity values.
 *   Implement stage gating (listening for queue depletion to enqueue the next DAG stage).
