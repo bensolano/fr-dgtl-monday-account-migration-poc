@@ -62,8 +62,10 @@
 *   Set up dedicated Cloud Run Job image with correct entrypoint.
 *   Implemented Firestore-backed `StateManager` (`src/core/state.py`) to manage idempotency mappings (`get_dest_id`, `set_dest_id`) before execution.
 *   Implemented `OrchestratorEngine` (`src/engines/orchestrator_engine.py`) to parse classified inventories into a staged DAG, properly filtering out `manual_only` tasks and enforcing execution order.
+*   Updated `terraform/main.tf` to provision dedicated Cloud Tasks queues for Phase 3 Execution (Workspaces, Boards, Groups, Columns, Items).
+*   Added `google-cloud-tasks` client library and updated `OrchestratorEngine.enqueue_dag` to push the first stage of valid items directly to GCP queues.
 
 **Next Up:**
-*   **Phase 3 (Cloud Tasks Integration):** Set up Cloud Tasks queues per stage with coarse concurrency limits in Terraform.
-*   Implement backend logic in `OrchestratorEngine` to enqueue the DAG tasks into these queues.
+*   **Phase 3 (Task Handlers):** Implement the `POST /api/v1/worker/{stage}` FastAPI endpoints to act as the Cloud Task workers.
 *   Implement token-bucket rate limiter.
+*   Implement stage gating (listening for queue depletion to enqueue the next DAG stage).
