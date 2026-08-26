@@ -21,7 +21,7 @@ echo "=================================================="
 
 # 1. Start the FastAPI backend in the background
 echo "Starting FastAPI backend on http://localhost:8000 ..."
-uv run uvicorn src.api.routes:app --reload --port 8000 &
+uv run uvicorn src.api.main:app --reload --port 8000 &
 BACKEND_PID=$!
 
 # Wait a brief moment for backend to initialize
