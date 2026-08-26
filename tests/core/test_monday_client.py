@@ -4,8 +4,8 @@ import httpx
 import pytest
 import respx
 
-from src.exceptions import MondayGraphQLError
-from src.monday_client import MondayClient
+from src.core.exceptions import MondayGraphQLError
+from src.core.monday_client import MondayClient
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ async def test_partial_success(client):
 
 @respx.mock
 @pytest.mark.asyncio
-@patch("src.monday_client.asyncio.sleep")
+@patch("src.core.monday_client.asyncio.sleep")
 async def test_rate_limit_retry_429(mock_sleep, client):
     route = respx.post("https://api.monday.com/v2")
 

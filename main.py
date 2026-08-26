@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-from src.job_engine import execute_discovery_job
+from src.engines.job_engine import execute_discovery_job
 
 # Configure standard logging to output to stdout
 logging.basicConfig(

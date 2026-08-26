@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any
 
-from src.monday_client import MondayClient
+from src.core.monday_client import MondayClient
 
 logger = logging.getLogger(__name__)
 

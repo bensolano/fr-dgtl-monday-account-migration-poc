@@ -2,12 +2,12 @@ import os
 
 import pytest
 
-from src.report_generator import ReportGenerator
+from src.engines.report_engine import ReportEngine
 
 
 @pytest.fixture
 def generator():
-    return ReportGenerator()
+    return ReportEngine()
 
 
 @pytest.fixture

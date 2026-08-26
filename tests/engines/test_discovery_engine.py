@@ -3,8 +3,8 @@ import os
 import pytest
 import respx
 
-from src.discovery import DiscoveryEngine
-from src.monday_client import MondayClient
+from src.core.monday_client import MondayClient
+from src.engines.discovery_engine import DiscoveryEngine
 
 
 @pytest.fixture

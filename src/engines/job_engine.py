@@ -4,10 +4,10 @@ import os
 
 from google.cloud import firestore, secretmanager, storage
 
-from src.classification import ClassificationEngine
-from src.discovery import DiscoveryEngine
-from src.monday_client import MondayClient
-from src.report_generator import ReportGenerator
+from src.core.monday_client import MondayClient
+from src.engines.classification_engine import ClassificationEngine
+from src.engines.discovery_engine import DiscoveryEngine
+from src.engines.report_engine import ReportEngine
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ async def execute_discovery_job(job_id: str):
         classified_inventory = classification_engine.process_inventory(inventory)
 
         # 4. Report Generation
-        report_generator = ReportGenerator()
+        report_generator = ReportEngine()
         report_md = report_generator.generate_markdown_report(classified_inventory)
         local_report_path = f"/tmp/{job_id}_report.md"
         report_generator.save_report(report_md, file_path=local_report_path)

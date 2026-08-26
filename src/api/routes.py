@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from google.cloud import run_v2, secretmanager, storage
 
 from src.api.models import JobCreateRequest, JobCreateResponse, JobStatusResponse
-from src.job_engine import execute_discovery_job, get_job, set_job_status
+from src.engines.job_engine import execute_discovery_job, get_job, set_job_status
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ async def get_job_status(job_id: str):
     job_data = get_job(job_id)
     if not job_data:
         # Fallback logic for local testing without firestore
-        from src.job_engine import db  # Import here to check local db state
+        from src.engines.job_engine import db  # Import here to check local db state
 
         if not db:
             return JobStatusResponse(job_id=job_id, status="PENDING")

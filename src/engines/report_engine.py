@@ -5,7 +5,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-class ReportGenerator:
+class ReportEngine:
     """
     Consumes a classified Monday.com inventory and generates a human-readable
     Markdown report summarizing the migration scope and caveats.

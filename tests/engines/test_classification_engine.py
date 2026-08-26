@@ -1,6 +1,6 @@
 import pytest
 
-from src.classification import ClassificationEngine
+from src.engines.classification_engine import ClassificationEngine
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.exceptions import (
+from src.core.exceptions import (
     MondayApiHttpError,
     MondayGraphQLError,
     MondayRateLimitError,

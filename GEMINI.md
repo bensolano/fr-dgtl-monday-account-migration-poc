@@ -52,10 +52,10 @@ Based on our reference architecture, enforce the following implementation standa
 
 ## 7. Code Quality & Formatting
 *   **Ruff:** This project uses `ruff` for all Python linting and formatting.
-*   **Mandatory Step:** At the end of *every* implementation step or file modification, you MUST run `uv run ruff check --fix .` and `uv run ruff format .` before concluding the turn.
+*   **Mandatory Step:** At the end of *every* implementation step or file modification, you MUST run `uv run ruff check --fix .`, `uv run ruff format .`, and `uv run pytest` before concluding the turn.
 
 ## 8. Architecture & Clean Code
-*   **Single Responsibility Principle (SRP):** Enforce strict separation of concerns. Do not bundle disparate logical components (e.g., exceptions, data models, network clients) in the same file. E.g., all custom exceptions must live in `src/exceptions.py`.
+*   **Single Responsibility Principle (SRP):** Enforce strict separation of concerns. Do not bundle disparate logical components (e.g., exceptions, data models, network clients) in the same file. E.g., all custom exceptions must live in `src/core/exceptions.py`.
 *   **DRY (Don't Repeat Yourself):** Consolidate reused logic (like standard pagination handlers) into central helper services.
 
 ## 9. Documentation Standards
