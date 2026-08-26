@@ -6,9 +6,103 @@ resource "google_project_service" "services" {
     "firestore.googleapis.com",
     "storage.googleapis.com",
     "cloudbuild.googleapis.com",
+    "cloudtasks.googleapis.com",
   ])
   service            = each.key
   disable_on_destroy = false
+}
+
+# --- Cloud Tasks Queues ---
+# Dedicated queues per stage to allow distinct rate limiting and scaling
+
+resource "google_cloud_tasks_queue" "workspaces_queue" {
+  name     = "migration-workspaces"
+  location = var.region
+
+  rate_limits {
+    max_dispatches_per_second = 10
+    max_concurrent_dispatches = 10
+  }
+
+  retry_config {
+    max_attempts = -1 # Let application logic or DLQ handle exact cutoff
+    min_backoff  = "1s"
+    max_backoff  = "3600s"
+  }
+
+  depends_on = [google_project_service.services]
+}
+
+resource "google_cloud_tasks_queue" "boards_queue" {
+  name     = "migration-boards"
+  location = var.region
+
+  rate_limits {
+    max_dispatches_per_second = 5
+    max_concurrent_dispatches = 5
+  }
+
+  retry_config {
+    max_attempts = -1
+    min_backoff  = "1s"
+    max_backoff  = "3600s"
+  }
+
+  depends_on = [google_project_service.services]
+}
+
+resource "google_cloud_tasks_queue" "groups_queue" {
+  name     = "migration-groups"
+  location = var.region
+
+  rate_limits {
+    max_dispatches_per_second = 10
+    max_concurrent_dispatches = 10
+  }
+
+  retry_config {
+    max_attempts = -1
+    min_backoff  = "1s"
+    max_backoff  = "3600s"
+  }
+
+  depends_on = [google_project_service.services]
+}
+
+resource "google_cloud_tasks_queue" "columns_queue" {
+  name     = "migration-columns"
+  location = var.region
+
+  rate_limits {
+    max_dispatches_per_second = 15
+    max_concurrent_dispatches = 15
+  }
+
+  retry_config {
+    max_attempts = -1
+    min_backoff  = "1s"
+    max_backoff  = "3600s"
+  }
+
+  depends_on = [google_project_service.services]
+}
+
+resource "google_cloud_tasks_queue" "items_queue" {
+  name     = "migration-items"
+  location = var.region
+
+  rate_limits {
+    max_dispatches_per_second = 20
+    max_concurrent_dispatches = 50
+  }
+
+  retry_config {
+    max_attempts = -1
+    min_backoff  = "1s"
+    max_backoff  = "3600s"
+  }
+
+  depends_on = [google_project_service.services]
 }
 
 # --- Storage ---
@@ -69,6 +163,12 @@ resource "google_project_iam_member" "api_secret_creator" {
 resource "google_project_iam_member" "api_secret_manager" {
   project = var.project_id
   role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.api_sa.email}"
+}
+
+resource "google_project_iam_member" "api_cloud_tasks_enqueuer" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
   member  = "serviceAccount:${google_service_account.api_sa.email}"
 }
 

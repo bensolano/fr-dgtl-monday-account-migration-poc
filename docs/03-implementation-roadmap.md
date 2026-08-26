@@ -40,7 +40,7 @@
 - [x] Deploy Portal UI and API.
 
 ## Phase 3 — Orchestration & Execution
-- [ ] DAG builder from confirmed scope, respecting dependency order:
+- [x] DAG builder from confirmed scope, respecting dependency order:
       workspace → board → group → column → item → subitem → update →
       file → doc.
 - [ ] Cloud Tasks queue setup per stage/direction (source-read queue,
@@ -48,7 +48,7 @@
       `max_concurrent_dispatches` as coarse limits.
 - [ ] Token-bucket rate limiter in the task handler, fed by live
       `complexity` response data.
-- [ ] Idempotency check (`source_id → dest_id` lookup in Firestore)
+- [x] Idempotency check (`source_id → dest_id` lookup in Firestore)
       before every create-mutation.
 - [ ] Pub/Sub stage-completion events to gate the next DAG stage.
 - [ ] Retry policy: transient vs. permanent error classification;
