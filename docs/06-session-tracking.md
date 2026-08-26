@@ -47,3 +47,21 @@
 *   **Infrastructure as Code:** Write Terraform modules for GCP deployment (Cloud Run, Secret Manager) relying on ADC.
 *   **State Management:** Replace the in-memory Python `job_store` dict with Firestore.
 *   **Storage:** Store the generated markdown reports in Cloud Storage instead of the local filesystem.
+
+## 2026-08-26 - Deployment & Infrastructure Hardening
+**Decisions Made:**
+*   **Deployment:** Adopted Cloud Build for CI/CD and Terraform for infrastructure as code, maintaining strict reliance on ADC.
+*   **Container Runtime:** Frontend API calls routed dynamically, NGINX configured to respect Cloud Run's `$PORT` environment variable.
+
+**Current State:**
+*   Completed Phase 2.5 of the Implementation Roadmap.
+*   Deployed Portal UI and API via Cloud Build and Terraform definitions (Cloud Run).
+*   Configured frontend NGINX and backend API containers to respect Cloud Run `PORT`.
+*   Restructured directories, extracted job execution logic, and added missing `get_job` function in `job_engine`.
+*   Added fallback logic to proxy report downloads when local signed URL generation fails.
+*   Set up dedicated Cloud Run Job image with correct entrypoint.
+
+**Next Up:**
+*   **Phase 3 (Orchestration & Execution):** Build the DAG orchestrator respecting dependency order (workspace → board → group → column → item).
+*   Set up Cloud Tasks queues per stage with coarse concurrency limits.
+*   Implement token-bucket rate limiter and idempotency checks before create-mutations.

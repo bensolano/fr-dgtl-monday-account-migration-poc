@@ -61,3 +61,10 @@ Based on our reference architecture, enforce the following implementation standa
 ## 9. Documentation Standards
 *   **Strict Docstrings:** Every method/function that accepts input parameters or returns a value MUST have a comprehensive docstring.
 *   **Format:** We use the Google docstring format. You must explicitly document the `Args:` (including their types) and `Returns:` (including the type) for every method.
+
+## 10. Session Tracking
+*   **Mandatory Update:** At the end of every significant implementation step or completed phase, you MUST update `docs/06-session-tracking.md` with the date, decisions made, the current state of work, and next steps.
+*   **Git Sync:** Keep the session tracker aligned with git history and the project roadmap.
+
+## 11. Architecture Documentation
+*   **Keep Architecture Updated:** Whenever architectural decisions are made, new infrastructure is introduced, or we transition between local and production implementations, you MUST update `docs/08-local-vs-prod-architecture.md` to reflect the current state. This ensures our architectural blueprints remain accurate as the plan evolves.

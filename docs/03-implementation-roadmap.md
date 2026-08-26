@@ -32,12 +32,12 @@
 - [x] Portal UI: scope selection tree (check/uncheck workspaces, boards,
       "include files" toggle, etc.), confirm action. (Scaffolded React+Vite app)
 
-## Phase 2.5 — Backend API & Infrastructure Preparation (In Progress)
+## Phase 2.5 — Backend API & Infrastructure Preparation (Done)
 - [x] Setup FastAPI backend (`src/api/routes.py`).
 - [x] Scaffold React + Vite frontend (`frontend/`).
 - [x] Create Dockerfiles for API and Frontend.
-- [ ] Write Terraform definitions for Cloud Run and Secrets Manager (ADC Auth).
-- [ ] Deploy Portal UI and API.
+- [x] Write Terraform definitions for Cloud Run and Secrets Manager (ADC Auth).
+- [x] Deploy Portal UI and API.
 
 ## Phase 3 — Orchestration & Execution
 - [ ] DAG builder from confirmed scope, respecting dependency order:
