@@ -65,6 +65,7 @@
 *   Updated `terraform/main.tf` to provision dedicated Cloud Tasks queues for Phase 3 Execution (Workspaces, Boards, Groups, Columns, Items).
 *   Added `google-cloud-tasks` client library and updated `OrchestratorEngine.enqueue_dag` to push the first stage of valid items directly to GCP queues.
 *   Implemented FastAPI worker endpoints (`src/api/worker_routes.py`) to receive Cloud Tasks payloads and execute the required idempotency checks via `StateManager`.
+*   Refactored FastAPI route structure to separate concerns: `job_routes.py` for Discovery triggers and `worker_routes.py` for DAG execution, orchestrated by `src/api/main.py`.
 
 **Next Up:**
 *   **Phase 3 (Rate Limiting & Execution):** Implement the Token-Bucket rate limiter inside the worker endpoints using complexity values.
