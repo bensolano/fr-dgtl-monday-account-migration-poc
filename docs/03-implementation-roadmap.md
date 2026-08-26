@@ -50,7 +50,7 @@
       `complexity` response data.
 - [x] Idempotency check (`source_id → dest_id` lookup in Firestore)
       before every create-mutation.
-- [ ] Pub/Sub stage-completion events to gate the next DAG stage.
+- [x] Pub/Sub stage-completion events to gate the next DAG stage.
 - [ ] Retry policy: transient vs. permanent error classification;
       `ComplexityException` → exact requeue delay from
       `reset_in_x_seconds`; dead-letter queue after N attempts.

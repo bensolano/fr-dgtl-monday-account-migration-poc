@@ -86,6 +86,12 @@ class OrchestratorEngine:
             logger.warning("Cloud Tasks client not available. Cannot enqueue tasks.")
             return
 
+        # Initialize DAG state counters in Firestore
+        from src.core.state import StateManager
+
+        state_manager = StateManager(self.project_id)
+        state_manager.initialize_dag_state(job_id, dag)
+
         # Phase 3: Enqueue only the first valid stage to kick off the DAG
         for stage in self.stage_order:
             tasks = dag.get(stage, [])

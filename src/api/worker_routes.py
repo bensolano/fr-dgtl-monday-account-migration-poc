@@ -153,6 +153,19 @@ async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResp
         logger.info(
             f"Successfully executed mutation for {entity_type} {source_id}. Created {dest_id}."
         )
+
+        # 4. Stage Gating (DAG state decrement)
+        # We assume the stage name corresponds closely to the entity_type ('board' -> 'boards')
+        # This triggers the enqueue of the next stage if this was the last task.
+        plural_stage = f"{entity_type}s"
+        is_stage_done = state_manager.mark_task_complete(job_id, plural_stage)
+
+        if is_stage_done:
+            logger.info(
+                f"Stage '{plural_stage}' for job {job_id} is completely finished!"
+            )
+            # In a full implementation, you would enqueue the *next* stage here, e.g. using OrchestratorEngine
+
         return {"status": "success", "dest_id": dest_id}
 
     except Exception as e:

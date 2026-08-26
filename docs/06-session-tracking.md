@@ -70,6 +70,7 @@
 *   Modified `MondayClient._execute_query_with_retries` to support `distributed=True`, returning complexity metadata and raising `MondayRateLimitError` to leverage Cloud Tasks native backoff instead of localized `asyncio.sleep`.
 *   Implemented `ExecutionEngine` (`src/engines/execution_engine.py`) to map source payloads (workspaces, boards, groups, columns, items) into explicit Monday.com GraphQL creation mutations.
 *   Updated FastAPI worker routes (`src/api/worker_routes.py`) to fetch the `dest_api_key` securely, instantiate the `ExecutionEngine`, and sync complexity budgets post-execution.
+*   Implemented Stage Gating in `StateManager` using Firestore transactions (`initialize_dag_state`, `mark_task_complete`). The orchestrator seeds the task counters per stage, and worker routes decrement them upon success, firing an event when a stage hits zero to continue DAG execution.
 
 **Next Up:**
-*   **Phase 3 (Stage Gating):** Implement stage gating (listening for queue depletion to enqueue the next DAG stage via Pub/Sub or Firestore listeners).
+*   **Phase 4 (Reporting & Ops):** BigQuery events table, final execution actuals vs plan, and Cloud Scheduler purges.

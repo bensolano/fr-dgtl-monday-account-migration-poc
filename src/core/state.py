@@ -205,3 +205,75 @@ class StateManager:
         )
 
         bucket_ref.set({"remaining_tokens": actual_remaining, "last_reset": last_reset})
+
+    def initialize_dag_state(
+        self, job_id: str, dag: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        """
+        Initializes the tracking state for a DAG execution to support stage gating.
+
+        Args:
+            job_id: The job context.
+            dag: The parsed DAG of tasks.
+        """
+        if not self.db:
+            return
+
+        batch = self.db.batch()
+        for stage, tasks in dag.items():
+            if not tasks:
+                continue
+            stage_ref = (
+                self.db.collection("jobs")
+                .document(job_id)
+                .collection("dag_state")
+                .document(stage)
+            )
+            batch.set(
+                stage_ref,
+                {"total_tasks": len(tasks), "completed_tasks": 0, "status": "pending"},
+            )
+        batch.commit()
+
+    def mark_task_complete(self, job_id: str, stage: str) -> bool:
+        """
+        Increments the completion counter for a stage and returns True if the stage is fully complete.
+
+        Args:
+            job_id: The job context.
+            stage: The stage that completed a task (e.g. 'workspaces').
+
+        Returns:
+            bool: True if this task completion finished the entire stage.
+        """
+        if not self.db:
+            return False
+
+        stage_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("dag_state")
+            .document(stage)
+        )
+
+        @firestore.transactional
+        def update_and_check(transaction, ref):
+            snapshot = ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return False
+
+            data = snapshot.to_dict()
+            completed = data.get("completed_tasks", 0) + 1
+            total = data.get("total_tasks", 1)
+
+            updates = {"completed_tasks": completed}
+            is_done = False
+
+            if completed >= total:
+                updates["status"] = "completed"
+                is_done = True
+
+            transaction.update(ref, updates)
+            return is_done
+
+        return update_and_check(self.db.transaction(), stage_ref)
