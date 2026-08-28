@@ -1,11 +1,10 @@
 import logging
-import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
-from google.cloud import secretmanager
 
+from src.api.models import TaskResponse
+from src.core import gcp
 from src.core.monday_client import MondayClient
 from src.core.state import StateManager
 from src.engines.execution_engine import ExecutionEngine
@@ -14,41 +13,6 @@ logger = logging.getLogger(__name__)
 
 worker_router = APIRouter()
 state_manager = StateManager()
-
-PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
-
-try:
-    secret_client = secretmanager.SecretManagerServiceClient()
-except Exception as e:  # noqa: BLE001
-    logger.warning(f"Failed to initialize Secret Manager in worker_routes: {e}")
-    secret_client = None
-
-
-def get_dest_api_key(job_id: str) -> str:
-    """
-    Retrieves the destination Monday.com API key for a given job from Secret Manager.
-
-    Args:
-        job_id (str): The unique identifier of the migration job.
-
-    Returns:
-        str: The decoded API key.
-
-    Raises:
-        RuntimeError: If the Secret Manager client is not initialized.
-        HTTPException: If retrieving the secret fails.
-    """
-    if not secret_client:
-        raise RuntimeError("Secret Manager client is not initialized.")
-    secret_name = f"projects/{PROJECT_ID}/secrets/job-{job_id}-dest-key/versions/latest"
-    try:
-        response = secret_client.access_secret_version(request={"name": secret_name})
-        return response.payload.data.decode("UTF-8")
-    except Exception as e:
-        logger.error(f"Failed to retrieve destination API key for job {job_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to retrieve destination API key."
-        ) from e
 
 
 def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
@@ -80,8 +44,8 @@ def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
     return cost
 
 
-@worker_router.post("/{stage}")
-async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResponse:
+@worker_router.post("/{stage}", response_model=TaskResponse)
+async def handle_task(stage: str, request: Request) -> TaskResponse:
     """
     Cloud Tasks HTTP webhook handler.
     Receives tasks from the queues, checks idempotency, enforces rate limits, and applies mutations.
@@ -91,10 +55,10 @@ async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResp
         request (Request): The incoming FastAPI HTTP request containing the Cloud Task payload.
 
     Returns:
-        dict[str, Any] | JSONResponse: A success dict or an HTTP 429 JSONResponse for rate limiting.
+        TaskResponse: A success or skipped status payload.
 
     Raises:
-        HTTPException: If the payload is invalid, missing required fields, or execution fails.
+        HTTPException: If the payload is invalid, missing required fields, execution fails, or rate limits hit (429).
     """
     try:
         payload = await request.json()
@@ -122,7 +86,7 @@ async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResp
         logger.info(
             f"Idempotency hit: {entity_type} {source_id} already exists as {existing_dest_id}. Bypassing."
         )
-        return {"status": "skipped", "reason": "idempotent"}
+        return TaskResponse(status="skipped", reason="idempotent")
 
     # 2. Proactive Rate Limiting (Token Bucket)
     estimated_cost = estimate_complexity(entity_type, entity_payload)
@@ -131,16 +95,15 @@ async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResp
             f"Insufficient complexity budget ({estimated_cost} required) for {entity_type}. Yielding 429 to Cloud Tasks."
         )
         # Return HTTP 429 to tell Cloud Tasks to back off and requeue natively
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Complexity budget exhausted. Requeueing."},
+        raise HTTPException(
+            status_code=429, detail="Complexity budget exhausted. Requeueing."
         )
 
     # 3. Execution
     try:
         # In local dev testing without SecretManager, we might want to bypass or error gracefully
         try:
-            dest_api_key = get_dest_api_key(job_id)
+            dest_api_key = gcp.get_dest_api_key(job_id)
         except RuntimeError:
             dest_api_key = "MOCK_KEY_FOR_LOCAL_TESTING"
 
@@ -170,7 +133,7 @@ async def handle_task(stage: str, request: Request) -> dict[str, Any] | JSONResp
             orchestrator = OrchestratorEngine()
             orchestrator.enqueue_next_stage(job_id, current_stage=plural_stage)
 
-        return {"status": "success", "dest_id": dest_id}
+        return TaskResponse(status="success", dest_id=str(dest_id))
 
     except Exception as e:
         logger.error(f"Failed to execute mutation for {entity_type} {source_id}: {e}")

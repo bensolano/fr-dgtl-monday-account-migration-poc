@@ -77,3 +77,21 @@
 
 **Next Up:**
 *   **Phase 4 (Reporting & Ops):** BigQuery events table, final execution actuals vs plan, and Cloud Scheduler purges.
+
+## 2026-08-28 - Bug Fixes
+**Decisions Made:**
+*   Fixed a Pydantic schema generation error in FastAPI for endpoints returning non-JSON responses (`RedirectResponse`, `Response`).
+*   Audited all API routes to ensure they return Pydantic schema-friendly models.
+*   Enforced "thin controllers" by moving all GCP client initialization and business logic (Secret Manager, Cloud Run, Cloud Storage) out of the FastAPI routers and into a dedicated `src/core/gcp.py` module.
+
+**Current State:**
+*   Added `response_model=None` to `job_routes.py` `/{job_id}/report` endpoint to prevent FastAPI from failing on schema generation.
+*   Created `ExecuteJobResponse` and `TaskResponse` models in `src/api/models.py`.
+*   Updated `execute_job` (in `job_routes.py`) and `handle_task` (in `worker_routes.py`) to use the newly created Pydantic models.
+*   Replaced explicit `JSONResponse` returns with `HTTPException` raises (e.g., status 429) in `handle_task` to comply with static typing.
+*   Created `src/core/gcp.py` containing `GCPClients` singleton and utility methods (`store_job_secrets`, `get_dest_api_key`, `trigger_cloud_run_discovery_job`, `get_inventory`, etc.).
+*   Refactored `src/api/job_routes.py` and `src/api/worker_routes.py` to strip out raw GCP SDK logic in favor of `src.core.gcp`.
+*   Verified that `uv run ruff check --fix .`, `uv run ruff format .`, and `uv run pytest` pass successfully.
+
+**Next Up:**
+*   Continue with Phase 4 (Reporting & Ops).

@@ -83,9 +83,11 @@ async def test_execute_discovery_job(
     # Mock Discovery
     mock_disc_instance = MagicMock()
     mock_disc_engine.return_value = mock_disc_instance
+
     # Make discover_full_account an async mock return value
     async def mock_discover(*args, **kwargs):
         return {"workspaces": []}
+
     mock_disc_instance.discover_full_account.side_effect = mock_discover
 
     # Mock Classification

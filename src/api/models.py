@@ -15,3 +15,14 @@ class JobCreateResponse(BaseModel):
     job_id: str
     status: str
     message: str
+
+
+class ExecuteJobResponse(BaseModel):
+    status: str
+    message: str
+
+
+class TaskResponse(BaseModel):
+    status: str
+    reason: str | None = None
+    dest_id: str | None = None
