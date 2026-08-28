@@ -4,7 +4,11 @@ import logging
 import os
 import sys
 
+from src.core.monday_client import MondayClient
+from src.engines.classification_engine import ClassificationEngine
+from src.engines.discovery_engine import DiscoveryEngine
 from src.engines.job_engine import JobEngine
+from src.engines.report_engine import ReportEngine
 
 # Configure standard logging to output to stdout
 logging.basicConfig(
@@ -13,6 +17,12 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+
+
+def default_discovery_factory(api_key: str) -> DiscoveryEngine:
+    """Factory function to build a DiscoveryEngine with a dynamic API key."""
+    client = MondayClient(api_key=api_key)
+    return DiscoveryEngine(client=client)
 
 
 async def main() -> None:
@@ -41,7 +51,11 @@ async def main() -> None:
         sys.exit(1)
 
     logger.info(f"--- BATCH JOB STARTED FOR JOB_ID: {job_id} ---")
-    engine = JobEngine()
+    engine = JobEngine(
+        classifier=ClassificationEngine(),
+        reporter=ReportEngine(),
+        discovery_factory=default_discovery_factory,
+    )
     await engine.execute_discovery_job(job_id)
     logger.info("--- BATCH JOB FINISHED ---")
 
