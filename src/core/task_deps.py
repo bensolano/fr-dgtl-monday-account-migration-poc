@@ -1,9 +1,10 @@
 import json
 import logging
 import os
-from typing import Any
 
 from google.cloud import storage
+
+from src.core.schemas import MigrationDag, TaskPayload
 
 try:
     from google.cloud import tasks_v2
@@ -23,15 +24,15 @@ class GCSDagStorage:
         self.client = storage.Client(project=project_id)
         self.bucket = self.client.bucket(bucket_name)
 
-    def save_dag(self, job_id: str, dag: dict[str, list[dict[str, Any]]]) -> None:
+    def save_dag(self, job_id: str, dag: MigrationDag) -> None:
         blob = self.bucket.blob(f"reports/{job_id}/dag.json")
-        blob.upload_from_string(json.dumps(dag), content_type="application/json")
+        blob.upload_from_string(dag.model_dump_json(), content_type="application/json")
 
-    def load_dag(self, job_id: str) -> dict[str, list[dict[str, Any]]] | None:
+    def load_dag(self, job_id: str) -> MigrationDag | None:
         blob = self.bucket.blob(f"reports/{job_id}/dag.json")
         if not blob.exists():
             return None
-        return json.loads(blob.download_as_string())
+        return MigrationDag.model_validate_json(blob.download_as_string())
 
 
 class CloudTaskQueue:
@@ -46,14 +47,16 @@ class CloudTaskQueue:
         self.service_url = service_url
         self.client = tasks_v2.CloudTasksClient() if tasks_v2 else None
 
-    def enqueue_task(self, job_id: str, stage: str, task: dict[str, Any]) -> None:
+    def enqueue_task(self, job_id: str, stage: str, task: TaskPayload) -> None:
         if not self.client:
             return
 
         queue_name = f"migration-{stage}"
         parent = self.client.queue_path(self.project_id, self.region, queue_name)
 
-        payload_bytes = json.dumps({"job_id": job_id, "task": task}).encode("utf-8")
+        payload_bytes = json.dumps(
+            {"job_id": job_id, "task": task.model_dump()}
+        ).encode("utf-8")
         task_def = {
             "http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,

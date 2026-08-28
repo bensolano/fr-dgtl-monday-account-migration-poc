@@ -1,8 +1,9 @@
 import logging
 import os
-from typing import Any
 
 from google.cloud import firestore
+
+from src.core.schemas import JobDocument, MigrationDag
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class StateManager:
             )
             self.db = None
 
-    def get_job(self, job_id: str) -> dict[str, Any] | None:
+    def get_job(self, job_id: str) -> JobDocument | None:
         """
         Retrieves the state of a migration job.
 
@@ -38,13 +39,13 @@ class StateManager:
             job_id (str): The unique identifier of the job.
 
         Returns:
-            Optional[Dict[str, Any]]: The job document dict if it exists, else None.
+            Optional[JobDocument]: The job document if it exists, else None.
         """
         if not self.db:
             return None
         doc = self.db.collection("jobs").document(job_id).get()
         if doc.exists:
-            return doc.to_dict()
+            return JobDocument.model_validate(doc.to_dict())
         return None
 
     def get_dest_id(self, job_id: str, entity_type: str, source_id: str) -> str | None:
@@ -206,9 +207,7 @@ class StateManager:
 
         bucket_ref.set({"remaining_tokens": actual_remaining, "last_reset": last_reset})
 
-    def initialize_dag_state(
-        self, job_id: str, dag: dict[str, list[dict[str, Any]]]
-    ) -> None:
+    def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
         """
         Initializes the tracking state for a DAG execution to support stage gating.
 
@@ -220,7 +219,8 @@ class StateManager:
             return
 
         batch = self.db.batch()
-        for stage, tasks in dag.items():
+        for stage in ["workspaces", "boards", "groups", "columns", "items"]:
+            tasks = getattr(dag, stage)
             if not tasks:
                 continue
             stage_ref = (

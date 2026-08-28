@@ -22,7 +22,13 @@ def test_state_manager_init_success(mock_firestore_client):
 def test_get_job_exists(mock_firestore_client):
     mock_doc = MagicMock()
     mock_doc.exists = True
-    mock_doc.to_dict.return_value = {"status": "PENDING"}
+    mock_doc.to_dict.return_value = {
+        "job_id": "job123",
+        "status": "PENDING",
+        "operator_email": "test@test.com",
+        "source_account": {"secret_ref": "sec1"},
+        "dest_account": {"secret_ref": "sec2"},
+    }
 
     mock_collection = MagicMock()
     mock_document = MagicMock()
@@ -34,7 +40,8 @@ def test_get_job_exists(mock_firestore_client):
     manager = StateManager()
     result = manager.get_job("job123")
 
-    assert result == {"status": "PENDING"}
+    assert result.status == "PENDING"
+    assert result.job_id == "job123"
     mock_firestore_client.collection.assert_called_with("jobs")
     mock_collection.document.assert_called_with("job123")
 

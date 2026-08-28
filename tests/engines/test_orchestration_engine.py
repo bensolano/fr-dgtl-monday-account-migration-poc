@@ -24,15 +24,15 @@ def test_build_dag_filters_manual_only():
     engine = get_mock_orchestration()
     dag = engine.build_dag(inventory)
 
-    assert len(dag["workspaces"]) == 1
-    assert dag["workspaces"][0]["source_id"] == "ws1"
+    assert len(dag.workspaces) == 1
+    assert dag.workspaces[0].source_id == "ws1"
 
-    assert len(dag["boards"]) == 1
-    assert dag["boards"][0]["source_id"] == "b1"
+    assert len(dag.boards) == 1
+    assert dag.boards[0].source_id == "b1"
 
-    assert len(dag["columns"]) == 0
-    assert len(dag["groups"]) == 0
-    assert len(dag["items"]) == 0
+    assert len(dag.columns) == 0
+    assert len(dag.groups) == 0
+    assert len(dag.items) == 0
 
 
 def test_build_dag_order():

@@ -1,5 +1,7 @@
 from typing import Any, Protocol
 
+from src.core.schemas import MigrationDag, TaskPayload
+
 # ==============================================================================
 # EDUCATIONAL NOTE: WHAT ARE PROTOCOLS?
 # ==============================================================================
@@ -47,9 +49,7 @@ class DiscovererInterface(Protocol):
 class StateInterface(Protocol):
     """Protocol defining state tracking behavior (e.g. for DAG orchestration)."""
 
-    def initialize_dag_state(
-        self, job_id: str, dag: dict[str, list[dict[str, Any]]]
-    ) -> None:
+    def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
         """Initializes the stage gating counters for a new DAG execution."""
         ...
 
@@ -57,11 +57,11 @@ class StateInterface(Protocol):
 class StorageInterface(Protocol):
     """Protocol defining blob storage behavior for DAG persistence."""
 
-    def save_dag(self, job_id: str, dag: dict[str, list[dict[str, Any]]]) -> None:
+    def save_dag(self, job_id: str, dag: MigrationDag) -> None:
         """Saves a computed DAG to storage."""
         ...
 
-    def load_dag(self, job_id: str) -> dict[str, list[dict[str, Any]]] | None:
+    def load_dag(self, job_id: str) -> MigrationDag | None:
         """Loads a previously saved DAG from storage."""
         ...
 
@@ -69,6 +69,6 @@ class StorageInterface(Protocol):
 class TaskQueueInterface(Protocol):
     """Protocol defining task enqueueing behavior."""
 
-    def enqueue_task(self, job_id: str, stage: str, task: dict[str, Any]) -> None:
+    def enqueue_task(self, job_id: str, stage: str, task: TaskPayload) -> None:
         """Enqueues a single task payload to the specified stage queue."""
         ...

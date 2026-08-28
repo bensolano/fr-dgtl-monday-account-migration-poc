@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Any
 
+from src.core.schemas import MigrationDag, TaskPayload
+
 try:
     from google.cloud import tasks_v2
 except ImportError:
@@ -58,9 +60,7 @@ class OrchestrationEngine:
         self.dag_storage = dag_storage
         self.task_queue = task_queue
 
-    def build_dag(
-        self, inventory: dict[str, list[Any]]
-    ) -> dict[str, list[dict[str, Any]]]:
+    def build_dag(self, inventory: dict[str, list[Any]]) -> MigrationDag:
         """
         Parses a classified inventory and returns a DAG organized by execution stage.
         Filters out items marked as 'manual_only'.
@@ -72,7 +72,7 @@ class OrchestrationEngine:
             Dict[str, List[Dict[str, Any]]]: A dictionary where keys are stage names (e.g. 'workspaces', 'boards')
                                              and values are lists of task payloads.
         """
-        dag = {stage: [] for stage in self.stage_order}
+        dag = MigrationDag()
 
         for stage in self.stage_order:
             entities = inventory.get(stage, [])
@@ -85,19 +85,19 @@ class OrchestrationEngine:
                     continue
 
                 # Build standard task payload
-                task = {
-                    "entity_type": stage.rstrip("s"),  # e.g. workspaces -> workspace
-                    "source_id": str(entity.get("id")),
-                    "payload": entity,
-                }
-                dag[stage].append(task)
+                task = TaskPayload(
+                    entity_type=stage.rstrip("s"),
+                    source_id=str(entity.get("id")),
+                    payload=entity,
+                )
+                getattr(dag, stage).append(task)
 
         logger.info(
-            f"Built DAG with {sum(len(tasks) for tasks in dag.values())} total tasks across {len(self.stage_order)} stages."
+            f"Built DAG with {sum(len(getattr(dag, s)) for s in self.stage_order)} total tasks across {len(self.stage_order)} stages."
         )
         return dag
 
-    def enqueue_dag(self, job_id: str, dag: dict[str, list[dict[str, Any]]]) -> None:
+    def enqueue_dag(self, job_id: str, dag: MigrationDag) -> None:
         """
         Enqueues the first stage of the DAG to Cloud Tasks.
         In a full implementation, subsequent stages are gated via Pub/Sub or status listeners.
@@ -144,7 +144,7 @@ class OrchestrationEngine:
 
         for i in range(start_idx, len(self.stage_order)):
             stage = self.stage_order[i]
-            tasks = dag.get(stage, [])
+            tasks = getattr(dag, stage)
             if tasks:
                 logger.info(
                     f"Enqueuing next DAG stage: '{stage}' with {len(tasks)} tasks."
@@ -161,14 +161,10 @@ class OrchestrationEngine:
         logger.info(f"DAG Execution completely finished for job {job_id}.")
         # self.state_manager.update_job_status(job_id, "MIGRATION_COMPLETED") # Ideal future state
 
-    def _enqueue_stage(
-        self, job_id: str, stage: str, tasks: list[dict[str, Any]]
-    ) -> None:
+    def _enqueue_stage(self, job_id: str, stage: str, tasks: list[TaskPayload]) -> None:
         """Helper to enqueue a list of tasks to a specific queue via the interface."""
         for t in tasks:
             try:
                 self.task_queue.enqueue_task(job_id, stage, t)
             except Exception as e:  # noqa: BLE001
-                logger.error(
-                    f"Failed to enqueue task {t.get('source_id')} for {stage}: {e}"
-                )
+                logger.error(f"Failed to enqueue task {t.source_id} for {stage}: {e}")

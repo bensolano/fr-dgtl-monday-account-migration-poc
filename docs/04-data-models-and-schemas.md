@@ -59,7 +59,14 @@ Replaces the proposed in-memory rate limiter with a global, transactional Token 
   status: "pending" | "completed"
 }
 ```
-This schema gates the execution DAG. Initialized by the orchestration before execution, tasks increment `completed_tasks` transactionally. When the counter reaches `total_tasks`, the orchestration queues the subsequent stage.
+This schema gates the execution DAG (Directed Acyclic Graph). In this project, the DAG acts as a **strict sequential pipeline** ensuring dependency order is maintained when recreating the Monday.com hierarchy. 
+
+The exact execution order is defined by the Orchestration Engine as:
+**`workspaces`** -> **`boards`** -> **`groups`** -> **`columns`** -> **`items`**
+
+*   **Initialization:** Before execution, the orchestration engine writes one document per stage (e.g., `boards: {total_tasks: 50, completed_tasks: 0, status: "pending"}`).
+*   **Progress Tracking:** As Cloud Task workers finish migrating individual objects, they transactionally increment `completed_tasks`.
+*   **Stage Gating:** When `completed_tasks` reaches `total_tasks` for a given stage, the current stage is marked `status: "completed"`, and the orchestrator is triggered to enqueue all Cloud Tasks for the subsequent stage in the pipeline.
 
 ## 2. BigQuery
 
@@ -93,23 +100,19 @@ progress and final report read `migration_events` joined back to
 
 ## 3. Cloud Tasks payload shape
 
-Each task represents exactly one object-copy operation:
-```
+Each task represents exactly one object-copy operation. The payload reflects the shape expected by the worker routes after being built by the Orchestration Engine:
+```json
 {
-  job_id: string,
-  source_object_id: string,
-  object_type: string,
-  operation: "create_board" | "create_group" | "create_column"
-           | "create_item" | "create_subitem" | "create_update"
-           | "upload_file" | "create_doc" | "create_article"
-           | "add_user_to_board" | ...,
-  depends_on: [string]   // source_object_ids that must already have
-                          // a dest_id in id_map before this can run
+  "job_id": "string",
+  "task": {
+    "entity_type": "workspace" | "board" | "group" | "column" | "item",
+    "source_id": "string",
+    "payload": { ... } // Original entity metadata from the inventory
+  }
 }
 ```
-The task handler resolves `depends_on` IDs via the `id_map` table at
-execution time (not baked in at enqueue time), since dependency
-resolution may lag behind DAG construction in a long-running job.
+
+*Note on Dependencies:* Earlier designs proposed a `depends_on: [string]` field resolved dynamically at execution time. This has been replaced by **stage gating**. The Orchestration Engine guarantees that no task for a stage (e.g., `groups`) is enqueued until all tasks for its prerequisite stage (e.g., `boards`) have completed fully and their IDs are mapped in the `id_map` collection.
 
 ## 4. Rate-limiter state (per job, per direction)
 
