@@ -14,7 +14,8 @@
 ### 28.08
 
 - Refactor routes: create Pydantic models for responses, move business logic into dedicated files, use FastAPI DI for engines
-- Study and apply SOLI"D3 principle in engines using Protocol and a callable factory
+- Study and apply SOLI"D" principle in engines using Protocol and a callable factory
+
 
 TODO:
 - Finish reviewing docs/09-method-overview.md
@@ -23,3 +24,6 @@ TODO:
 - Add estimated discovery time in UI
 - Add static info section in report containing concise version of the migration capabilit matrix
 - Implement pydantic BaseSettings for env vars
+- Add delete button by job_id
+- The 02-architecture.md file describes an idealized design where the handler passes a dynamic Retry-After header back to Cloud Tasks. However, Cloud Tasks HTTP target queues do not natively parse
+  Retry-After headers to dynamically adjust their retry schedule; they strictly follow the queue-level retry configuration.

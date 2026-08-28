@@ -1,5 +1,54 @@
 # Data Models & Schemas
 
+## Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    JOB ||--o{ INVENTORY : has
+    JOB ||--o{ ID_MAP : tracks
+    JOB ||--o{ DAG_STATE : controls
+    JOB ||--|| COMPLEXITY_BUCKET : governs
+    
+    JOB {
+        string job_id PK
+        string status
+        string operator_email
+    }
+    INVENTORY {
+        string object_id PK
+        string object_type
+        string name
+        boolean included_in_scope
+    }
+    ID_MAP {
+        string source_id PK
+        string dest_id
+        string entity_type
+    }
+    DAG_STATE {
+        string stage PK
+        int total_tasks
+        int completed_tasks
+        string status
+    }
+    COMPLEXITY_BUCKET {
+        int remaining_tokens
+        timestamp last_reset
+    }
+    
+    JOB ||--o{ INVENTORY_EVENTS : logs_discovery
+    JOB ||--o{ MIGRATION_EVENTS : logs_execution
+    
+    INVENTORY_EVENTS {
+        string object_id
+        string object_type
+    }
+    MIGRATION_EVENTS {
+        string source_object_id
+        string status
+    }
+```
+
 ## 1. Firestore
 
 ### `jobs/{job_id}`
@@ -63,6 +112,20 @@ This schema gates the execution DAG (Directed Acyclic Graph). In this project, t
 
 The exact execution order is defined by the Orchestration Engine as:
 **`workspaces`** -> **`boards`** -> **`groups`** -> **`columns`** -> **`items`**
+
+```mermaid
+graph LR
+    W[workspaces] -->|Wait for completion| B[boards]
+    B -->|Wait for completion| G[groups]
+    G -->|Wait for completion| C[columns]
+    C -->|Wait for completion| I[items]
+    
+    style W fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style G fill:#bfb,stroke:#333,stroke-width:2px
+    style C fill:#fbf,stroke:#333,stroke-width:2px
+    style I fill:#fbb,stroke:#333,stroke-width:2px
+```
 
 *   **Initialization:** Before execution, the orchestration engine writes one document per stage (e.g., `boards: {total_tasks: 50, completed_tasks: 0, status: "pending"}`).
 *   **Progress Tracking:** As Cloud Task workers finish migrating individual objects, they transactionally increment `completed_tasks`.

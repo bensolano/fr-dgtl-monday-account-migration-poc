@@ -19,6 +19,50 @@
 
 ## 2. Data flow (detailed)
 
+```mermaid
+graph TD
+    subgraph Web
+        Portal["Portal (Cloud Run)"]
+    end
+    
+    subgraph Discovery Phase
+        Discovery["Discovery Job (Cloud Run)"]
+        ReportGen["Report Generator"]
+    end
+    
+    subgraph Orchestration & Execution
+        Orchestrator["Orchestrator (Cloud Run)"]
+        CloudTasks["Cloud Tasks Queue"]
+        TaskHandler["Task Handler (Cloud Run)"]
+        PubSub["Event Fan-out (Pub/Sub)"]
+    end
+    
+    subgraph Storage
+        Firestore[("State Store - Firestore")]
+        BigQuery[("Audit/Events - BigQuery")]
+        SecretMgr["Secrets (Secret Manager)"]
+        GCS["Reports (Cloud Storage)"]
+    end
+    
+    Portal -->|1. Creates Job| SecretMgr
+    Portal -->|2. Triggers| Discovery
+    Discovery -->|Reads APIs| SecretMgr
+    Discovery -->|Writes Inventory| Firestore
+    Discovery -->|Writes Events| BigQuery
+    Discovery -->|Triggers| ReportGen
+    ReportGen -->|Saves Report| GCS
+    Portal -->|5. Confirms Scope| Firestore
+    Portal -->|6. Triggers| Orchestrator
+    Orchestrator -->|Builds DAG & Enqueues| CloudTasks
+    CloudTasks -->|Dispatches| TaskHandler
+    TaskHandler -->|Checks Idempotency| Firestore
+    TaskHandler -->|Updates State| Firestore
+    TaskHandler -->|Logs Attempt| BigQuery
+    TaskHandler -->|Signals Complete| PubSub
+    PubSub -->|Next Stage| Orchestrator
+```
+
+
 1. **Job creation** — Portal generates a `job_id` (UUID). Both API keys
    are written to Secret Manager under `job_id`-scoped secret names.
    Nothing else references the raw keys; all downstream services fetch

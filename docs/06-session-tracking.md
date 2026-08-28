@@ -103,6 +103,7 @@
 *   Refactored `worker_routes.py` `handle_task` endpoint to accept `WorkerTaskRequest`, removing manual JSON parsing.
 *   Fixed unit tests in `test_state.py` and `test_orchestration_engine.py` to accommodate object attribute access instead of dictionary bracket notation.
 *   Updated `docs/04-data-models-and-schemas.md` to accurately reflect the DAG stage gating architecture and the updated Cloud Tasks payload shape.
+*   Added Mermaid diagrams to `docs/02-architecture.md` (Architecture Flow) and `docs/04-data-models-and-schemas.md` (ERD and Pipeline DAG) to visually represent the data flows and models.
 *   Verified that all tests and linters pass.
 
 **Next Up:**
