@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,14 +17,51 @@ def mock_gcp_clients():
         yield mock_db, mock_storage, mock_secret
 
 
-def test_job_engine_init(mock_gcp_clients):
-    engine = JobEngine(project_id="test-proj", reports_bucket="test-bucket")
+@pytest.fixture
+def mock_classifier():
+    classifier = MagicMock()
+    classifier.process_inventory.return_value = {"workspaces": []}
+    return classifier
+
+
+@pytest.fixture
+def mock_reporter():
+    reporter = MagicMock()
+    reporter.generate_markdown_report.return_value = "# Report"
+    return reporter
+
+
+@pytest.fixture
+def mock_discovery_factory():
+    discoverer = AsyncMock()
+    discoverer.discover_full_account.return_value = {"workspaces": []}
+
+    def factory(api_key: str):
+        return discoverer
+
+    # Attach the discoverer to the factory so tests can assert on it
+    factory.discoverer = discoverer
+    return factory
+
+
+def test_job_engine_init(
+    mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
+):
+    engine = JobEngine(
+        classifier=mock_classifier,
+        reporter=mock_reporter,
+        discovery_factory=mock_discovery_factory,
+        project_id="test-proj",
+        reports_bucket="test-bucket",
+    )
     assert engine.project_id == "test-proj"
     assert engine.reports_bucket == "test-bucket"
     assert engine.has_firestore() is True
 
 
-def test_job_engine_set_job_status(mock_gcp_clients):
+def test_job_engine_set_job_status(
+    mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
+):
     mock_db, _, _ = mock_gcp_clients
     mock_db_instance = MagicMock()
     mock_db.return_value = mock_db_instance
@@ -32,7 +69,11 @@ def test_job_engine_set_job_status(mock_gcp_clients):
     mock_doc = MagicMock()
     mock_db_instance.collection.return_value.document.return_value = mock_doc
 
-    engine = JobEngine()
+    engine = JobEngine(
+        classifier=mock_classifier,
+        reporter=mock_reporter,
+        discovery_factory=mock_discovery_factory,
+    )
     engine.set_job_status("job-123", "RUNNING")
 
     mock_db_instance.collection.assert_called_with("jobs")
@@ -42,7 +83,9 @@ def test_job_engine_set_job_status(mock_gcp_clients):
     assert kwargs["merge"] is True
 
 
-def test_job_engine_get_job(mock_gcp_clients):
+def test_job_engine_get_job(
+    mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
+):
     mock_db, _, _ = mock_gcp_clients
     mock_db_instance = MagicMock()
     mock_db.return_value = mock_db_instance
@@ -54,22 +97,18 @@ def test_job_engine_get_job(mock_gcp_clients):
         mock_doc
     )
 
-    engine = JobEngine()
+    engine = JobEngine(
+        classifier=mock_classifier,
+        reporter=mock_reporter,
+        discovery_factory=mock_discovery_factory,
+    )
     result = engine.get_job("job-123")
     assert result == {"status": "COMPLETED"}
 
 
 @pytest.mark.asyncio
-@patch("src.engines.job_engine.MondayClient")
-@patch("src.engines.job_engine.DiscoveryEngine")
-@patch("src.engines.job_engine.ClassificationEngine")
-@patch("src.engines.job_engine.ReportEngine")
 async def test_execute_discovery_job(
-    mock_report_engine,
-    mock_class_engine,
-    mock_disc_engine,
-    mock_monday_client,
-    mock_gcp_clients,
+    mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
 ):
     _mock_db, mock_storage, mock_secret = mock_gcp_clients
 
@@ -80,38 +119,25 @@ async def test_execute_discovery_job(
     mock_secret_response.payload.data.decode.return_value = "fake_api_key"
     mock_secret_instance.access_secret_version.return_value = mock_secret_response
 
-    # Mock Discovery
-    mock_disc_instance = MagicMock()
-    mock_disc_engine.return_value = mock_disc_instance
-
-    # Make discover_full_account an async mock return value
-    async def mock_discover(*args, **kwargs):
-        return {"workspaces": []}
-
-    mock_disc_instance.discover_full_account.side_effect = mock_discover
-
-    # Mock Classification
-    mock_class_instance = MagicMock()
-    mock_class_engine.return_value = mock_class_instance
-    mock_class_instance.process_inventory.return_value = {"workspaces": []}
-
-    # Mock Report
-    mock_rep_instance = MagicMock()
-    mock_report_engine.return_value = mock_rep_instance
-    mock_rep_instance.generate_markdown_report.return_value = "# Report"
-
     # Mock Storage
     mock_storage_instance = MagicMock()
     mock_storage.return_value = mock_storage_instance
 
-    engine = JobEngine()
+    engine = JobEngine(
+        classifier=mock_classifier,
+        reporter=mock_reporter,
+        discovery_factory=mock_discovery_factory,
+    )
 
     # Avoid file writing in test
     with patch("builtins.open"), patch("json.dump"):
         await engine.execute_discovery_job("job-123")
 
     mock_secret_instance.access_secret_version.assert_called_once()
-    mock_disc_instance.discover_full_account.assert_called_once()
-    mock_class_instance.process_inventory.assert_called_once()
-    mock_rep_instance.save_report.assert_called_once()
+
+    # Assert on our injected mocks instead of patched globals!
+    mock_discovery_factory.discoverer.discover_full_account.assert_called_once()
+    mock_classifier.process_inventory.assert_called_once()
+    mock_reporter.save_report.assert_called_once()
+
     mock_storage_instance.bucket.assert_called_once()

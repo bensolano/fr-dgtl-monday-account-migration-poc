@@ -12,18 +12,51 @@ from src.api.models import (
     JobStatusResponse,
 )
 from src.core import gcp
+from src.core.monday_client import MondayClient
+from src.engines.classification_engine import ClassificationEngine
+from src.engines.discovery_engine import DiscoveryEngine
 from src.engines.job_engine import JobEngine
+from src.engines.report_engine import ReportEngine
 
 logger = logging.getLogger(__name__)
 
 job_router = APIRouter()
+
+# ==============================================================================
+# EDUCATIONAL NOTE: THE COMPOSITION ROOT (DEPENDENCY PROVIDER)
+# ==============================================================================
+# In a pure SOLID architecture, the business logic (JobEngine) knows NOTHING
+# about concrete implementations.
+#
+# So, *someone* has to wire the concrete classes together. That is the job of the
+# "Composition Root" — usually the outermost layer of the application (the Router).
+#
+# Here, FastAPI acts as our Composition Root. When a route asks for a `JobEngine`,
+# FastAPI calls `get_job_engine()`, which instantiates the concrete classes and
+# passes them to the engine.
+# ==============================================================================
+
+
+def default_discovery_factory(api_key: str) -> DiscoveryEngine:
+    """Factory function to build a DiscoveryEngine with a dynamic API key."""
+    client = MondayClient(api_key=api_key)
+    return DiscoveryEngine(client=client)
+
+
+def get_job_engine() -> JobEngine:
+    """Dependency provider that wires concrete engines into JobEngine."""
+    return JobEngine(
+        classifier=ClassificationEngine(),
+        reporter=ReportEngine(),
+        discovery_factory=default_discovery_factory,
+    )
 
 
 @job_router.post("", response_model=JobCreateResponse)
 async def create_job(
     request: JobCreateRequest,
     background_tasks: BackgroundTasks,
-    job_engine: Annotated[JobEngine, Depends()],
+    job_engine: Annotated[JobEngine, Depends(get_job_engine)],
 ) -> JobCreateResponse:
     """
     Creates a new migration job, secures API keys in Secret Manager, and triggers execution.
@@ -78,13 +111,14 @@ async def create_job(
 @job_router.get("/{job_id}/status", response_model=JobStatusResponse)
 async def get_job_status(
     job_id: str,
-    job_engine: Annotated[JobEngine, Depends()],
+    job_engine: Annotated[JobEngine, Depends(get_job_engine)],
 ) -> JobStatusResponse:
     """
     Retrieves the current execution status of a specific job.
 
     Args:
         job_id (str): The unique identifier of the job.
+        job_engine (JobEngine): Injected engine for job state.
 
     Returns:
         JobStatusResponse: The status payload.
@@ -108,7 +142,7 @@ from src.engines.orchestrator_engine import OrchestratorEngine
 @job_router.post("/{job_id}/execute", response_model=ExecuteJobResponse)
 async def execute_job(
     job_id: str,
-    job_engine: Annotated[JobEngine, Depends()],
+    job_engine: Annotated[JobEngine, Depends(get_job_engine)],
     orchestrator: Annotated[OrchestratorEngine, Depends()],
 ) -> ExecuteJobResponse:
     """
@@ -161,7 +195,7 @@ async def execute_job(
 @job_router.get("/{job_id}/report", response_model=None)
 async def get_job_report(
     job_id: str,
-    job_engine: Annotated[JobEngine, Depends()],
+    job_engine: Annotated[JobEngine, Depends(get_job_engine)],
 ) -> RedirectResponse | Any:
     """
     Generates a secure download link for the completed migration report.

@@ -2,14 +2,16 @@ import datetime
 import json
 import logging
 import os
+from collections.abc import Callable
 from typing import Any
 
 from google.cloud import firestore, secretmanager, storage
 
-from src.core.monday_client import MondayClient
-from src.engines.classification_engine import ClassificationEngine
-from src.engines.discovery_engine import DiscoveryEngine
-from src.engines.report_engine import ReportEngine
+from src.engines.interfaces import (
+    ClassifierInterface,
+    DiscovererInterface,
+    ReporterInterface,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +22,52 @@ class JobEngine:
     """
 
     def __init__(
-        self, project_id: str | None = None, reports_bucket: str | None = None
+        self,
+        classifier: ClassifierInterface,
+        reporter: ReporterInterface,
+        discovery_factory: Callable[[str], DiscovererInterface],
+        project_id: str | None = None,
+        reports_bucket: str | None = None,
     ):
         """
-        Initializes the JobEngine with necessary GCP clients.
+        Initializes the JobEngine with necessary dependencies and GCP clients.
+
+        # ==============================================================================
+        # EDUCATIONAL NOTE: DEPENDENCY INVERSION (SOLID "D")
+        # ==============================================================================
+        # BEFORE:
+        # We had no dependencies injected. JobEngine imported the concrete
+        # ClassificationEngine directly and instantiated it inline. This violated DIP
+        # because the high-level JobEngine depended on a low-level concrete implementation.
+        #
+        # POOR MAN's DI (The "or" pattern):
+        # We could have done `self.classifier = classifier or ClassificationEngine()`.
+        # But this STILL requires JobEngine to import `ClassificationEngine` as the fallback,
+        # meaning they are still tightly coupled.
+        #
+        # AFTER (True Dependency Injection):
+        # We inject the Interfaces (Protocols). JobEngine has ZERO imports of concrete
+        # engines now. It is completely decoupled. If we want to unit test JobEngine,
+        # we pass in dummy objects that match the Protocol.
+        #
+        # THE FACTORY PATTERN (discovery_factory):
+        # We can't inject an instantiated DiscoveryEngine because it requires an API key
+        # that we only fetch dynamically during the job execution.
+        # Instead, we inject a Factory (`Callable[[str], DiscovererInterface]`). JobEngine
+        # knows: "If I pass a string (API key) to this factory function, I get a Discoverer."
+        # ==============================================================================
 
         Args:
+            classifier: An injected instance satisfying the ClassifierInterface.
+            reporter: An injected instance satisfying the ReporterInterface.
+            discovery_factory: A function that takes an API key and returns a Discoverer.
             project_id: The GCP project ID. Defaults to env var PROJECT_ID.
             reports_bucket: The GCS bucket for reports. Defaults to env var REPORTS_BUCKET.
         """
+        self.classifier = classifier
+        self.reporter = reporter
+        self.discovery_factory = discovery_factory
+
         self.project_id = project_id or os.environ.get(
             "PROJECT_ID", "local-dev-project"
         )
@@ -131,23 +170,41 @@ class JobEngine:
             source_api_key = response.payload.data.decode("UTF-8")
 
             # 2. Discovery
-            client = MondayClient(api_key=source_api_key)
-            discovery_engine = DiscoveryEngine(client=client)
+            # ==============================================================================
+            # EDUCATIONAL NOTE: USING THE INJECTED FACTORY
+            # ==============================================================================
+            # BEFORE:
+            # client = MondayClient(api_key=source_api_key)
+            # discovery_engine = DiscoveryEngine(client=client)
+            #
+            # AFTER:
+            # We don't care how the Discoverer is built or what client it uses.
+            # We just pass the required runtime data to the factory and get an instance back.
+            # ==============================================================================
+            discoverer = self.discovery_factory(source_api_key)
 
             local_inventory_path = f"/tmp/{job_id}_inventory.json"
-            inventory = await discovery_engine.discover_full_account(
+            inventory = await discoverer.discover_full_account(
                 output_path=local_inventory_path
             )
 
             # 3. Classification
-            classification_engine = ClassificationEngine()
-            classified_inventory = classification_engine.process_inventory(inventory)
+            # ==============================================================================
+            # EDUCATIONAL NOTE: USING INJECTED PROTOCOLS
+            # ==============================================================================
+            # BEFORE:
+            # classification_engine = ClassificationEngine()
+            # classified_inventory = classification_engine.process_inventory(inventory)
+            #
+            # AFTER:
+            # We just use the `self.classifier` injected at construction.
+            # ==============================================================================
+            classified_inventory = self.classifier.process_inventory(inventory)
 
             # 4. Report Generation
-            report_generator = ReportEngine()
-            report_md = report_generator.generate_markdown_report(classified_inventory)
+            report_md = self.reporter.generate_markdown_report(classified_inventory)
             local_report_path = f"/tmp/{job_id}_report.md"
-            report_generator.save_report(report_md, file_path=local_report_path)
+            self.reporter.save_report(report_md, file_path=local_report_path)
 
             # Save classified inventory locally for upload
             local_classified_path = f"/tmp/{job_id}_classified_inventory.json"
