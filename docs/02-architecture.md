@@ -96,9 +96,9 @@ graph TD
    a rate governed by queue config (`max_dispatches_per_second`,
    `max_concurrent_dispatches`) *and* an in-handler token bucket that
    tracks the destination account's live complexity budget (read from
-   each response's `complexity` block). On `ComplexityException`, the
-   handler reads `reset_in_x_seconds` and returns a retry-after signal
-   to Cloud Tasks rather than blind exponential backoff.
+   each response's `complexity` block). On `ComplexityException` (HTTP 429), the
+   handler relies on Cloud Tasks' native queue configuration (exponential backoff)
+   for retries.
 8. **Idempotency** — Before each create-mutation, the handler checks
    Firestore for an existing `source_id → dest_id` mapping; if present,
    skip (already done). This makes retries and job resumption safe.
@@ -116,15 +116,14 @@ graph TD
 
 - **Single Global Execution Token Bucket**: During execution (writes), the system maintains a single transactional token bucket in Firestore (`jobs/{job_id}/state/complexity_bucket`) to govern the destination token's complexity budget.
 - **Budget Syncing**: The bucket's capacity is driven by real `complexity.after` and `reset_in_x_seconds` values returned directly in the metadata of every successful live API response (tracked in `src/engines/execution_engine.py` via `_sync_complexity`). We treat the live server value as ground truth over local estimates.
-- **Coarse vs Fine Governing**: Cloud Tasks queue settings (`max_dispatches_per_second` configured in Terraform) act as a hardware-level coarse ceiling. The Token Bucket inside the `worker_routes.py` handler is the precise proactive governor, yielding HTTP 429s back to Cloud Tasks to pause queues gracefully when tokens run low.
+- **Coarse vs Fine Governing**: Cloud Tasks queue settings (`max_dispatches_per_second` configured in Terraform) act as a hardware-level coarse ceiling. The Token Bucket inside the `worker_routes.py` handler is the precise proactive governor, yielding HTTP 429s back to Cloud Tasks to pause queues gracefully when tokens run low, relying on the queue's native retry backoff configuration.
 - **Batched Mutations**: To minimize HTTP overhead, the system prefers using batch mutations like `change_multiple_column_values` where possible, but execution tasks are dispatched one-per-entity to ensure precise idempotency and rollback safety.
 
 ## 4. Retry & failure handling
 
 - Cloud Tasks native retry config: exponential backoff with jitter for
-  transient 5xx.
-- `ComplexityException` (429-equivalent): explicit requeue using the
-  server-provided reset time, not generic backoff.
+  transient 5xx and 429s.
+- `ComplexityException` (429-equivalent): yields an HTTP 429 back to Cloud Tasks to trigger native backoff queues.
 - Permanent failures (validation errors, missing required field, column
   type unsupported on destination) → do not retry; mark `failed_permanent`
   in Firestore and route to the final report's manual-review section.

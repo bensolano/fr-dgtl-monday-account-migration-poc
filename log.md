@@ -15,10 +15,11 @@
 
 - Refactor routes: create Pydantic models for responses, move business logic into dedicated files, use FastAPI DI for engines
 - Study and apply SOLI"D" principle in engines using Protocol and a callable factory
-
+- Add Pydantic models where dicts where used
+- Add schemas to docs
+- Reviewed docs/09-method-overview.md
 
 TODO:
-- Finish reviewing docs/09-method-overview.md
 - Test migration phase
 - Add cancel job button in UI for pending jobs
 - Add estimated discovery time in UI

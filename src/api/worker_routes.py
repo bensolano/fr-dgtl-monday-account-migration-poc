@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.models import TaskResponse
 from src.core import gcp
+from src.core.exceptions import MondayRateLimitError
 from src.core.monday_client import MondayClient
 from src.core.schemas import WorkerTaskRequest
 from src.core.state import StateManager
@@ -161,6 +162,14 @@ async def handle_task(
 
         return TaskResponse(status="success", dest_id=str(dest_id))
 
+    except MondayRateLimitError as e:
+        logger.warning(
+            f"Rate limit hit during execution for {entity_type} {source_id}: {e}"
+        )
+        # Yield 429 to Cloud Tasks for native backoff
+        raise HTTPException(
+            status_code=429, detail="Monday API rate limit exhausted. Requeueing."
+        ) from e
     except Exception as e:
         logger.error(f"Failed to execute mutation for {entity_type} {source_id}: {e}")
         # Pass 500 errors to Cloud Tasks which will retry based on its config
