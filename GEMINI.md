@@ -56,8 +56,9 @@ Based on our reference architecture, enforce the following implementation standa
 *   **Mandatory Step:** At the end of *every* implementation step or file modification, you MUST run `uv run ruff check --fix .`, `uv run ruff format .`, and `uv run pytest` before concluding the turn.
 
 ## 8. Architecture & Clean Code
-*   **Single Responsibility Principle (SRP):** Enforce strict separation of concerns. Do not bundle disparate logical components (e.g., exceptions, data models, network clients) in the same file. E.g., all custom exceptions must live in `src/core/exceptions.py`.
+*   **Single Responsibility Principle (SRP):** Enforce strict separation of concerns. Do not bundle disparate logical components (e.g., exceptions, data models, network clients) in the same file. E.g., all custom exceptions must live in `src/core/exceptions.py`. "Thin controllers" are mandatory; business logic (e.g., GCP SDK interactions) must be abstracted into dedicated modules like `src/core/gcp.py` rather than living directly in route handlers.
 *   **DRY (Don't Repeat Yourself):** Consolidate reused logic (like standard pagination handlers) into central helper services.
+*   **Dependency Injection:** You MUST use FastAPI's Dependency Injection framework for providing engines, services, or managers to your route handlers. Do NOT use global module-level variable instantiations (e.g., `engine = MyEngine()`). Always use the type-hinted shortcut: `engine: Annotated[MyEngine, Depends()]`. This ensures strict request-scoping, provides perfect IDE autocomplete, and makes the architecture inherently testable via `app.dependency_overrides`.
 
 ## 9. Documentation Standards
 *   **Strict Docstrings:** Every method/function that accepts input parameters or returns a value MUST have a comprehensive docstring.

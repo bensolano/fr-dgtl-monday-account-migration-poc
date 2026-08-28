@@ -1,18 +1,18 @@
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.api.models import TaskResponse
 from src.core import gcp
 from src.core.monday_client import MondayClient
 from src.core.state import StateManager
 from src.engines.execution_engine import ExecutionEngine
+from src.engines.orchestrator_engine import OrchestratorEngine
 
 logger = logging.getLogger(__name__)
 
 worker_router = APIRouter()
-state_manager = StateManager()
 
 
 def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
@@ -45,7 +45,12 @@ def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
 
 
 @worker_router.post("/{stage}", response_model=TaskResponse)
-async def handle_task(stage: str, request: Request) -> TaskResponse:
+async def handle_task(
+    stage: str,
+    request: Request,
+    state_manager: Annotated[StateManager, Depends()],
+    orchestrator: Annotated[OrchestratorEngine, Depends()],
+) -> TaskResponse:
     """
     Cloud Tasks HTTP webhook handler.
     Receives tasks from the queues, checks idempotency, enforces rate limits, and applies mutations.
@@ -53,6 +58,8 @@ async def handle_task(stage: str, request: Request) -> TaskResponse:
     Args:
         stage (str): The DAG stage currently being executed (e.g., 'boards', 'items').
         request (Request): The incoming FastAPI HTTP request containing the Cloud Task payload.
+        state_manager (StateManager): Injected dependency for job state and gating.
+        orchestrator (OrchestratorEngine): Injected dependency for triggering subsequent stages.
 
     Returns:
         TaskResponse: A success or skipped status payload.
@@ -127,10 +134,7 @@ async def handle_task(stage: str, request: Request) -> TaskResponse:
             logger.info(
                 f"Stage '{plural_stage}' for job {job_id} is completely finished!"
             )
-            # Instantiate the orchestrator to trigger the next stage
-            from src.engines.orchestrator_engine import OrchestratorEngine
-
-            orchestrator = OrchestratorEngine()
+            # Use the injected orchestrator to trigger the next stage
             orchestrator.enqueue_next_stage(job_id, current_stage=plural_stage)
 
         return TaskResponse(status="success", dest_id=str(dest_id))

@@ -1,8 +1,8 @@
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
 from src.api.models import (
@@ -17,12 +17,13 @@ from src.engines.job_engine import JobEngine
 logger = logging.getLogger(__name__)
 
 job_router = APIRouter()
-job_engine = JobEngine()
 
 
 @job_router.post("", response_model=JobCreateResponse)
 async def create_job(
-    request: JobCreateRequest, background_tasks: BackgroundTasks
+    request: JobCreateRequest,
+    background_tasks: BackgroundTasks,
+    job_engine: Annotated[JobEngine, Depends()],
 ) -> JobCreateResponse:
     """
     Creates a new migration job, secures API keys in Secret Manager, and triggers execution.
@@ -75,7 +76,10 @@ async def create_job(
 
 
 @job_router.get("/{job_id}/status", response_model=JobStatusResponse)
-async def get_job_status(job_id: str) -> JobStatusResponse:
+async def get_job_status(
+    job_id: str,
+    job_engine: Annotated[JobEngine, Depends()],
+) -> JobStatusResponse:
     """
     Retrieves the current execution status of a specific job.
 
@@ -98,14 +102,23 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
     return JobStatusResponse(job_id=job_id, status=job_data.get("status", "UNKNOWN"))
 
 
+from src.engines.orchestrator_engine import OrchestratorEngine
+
+
 @job_router.post("/{job_id}/execute", response_model=ExecuteJobResponse)
-async def execute_job(job_id: str) -> ExecuteJobResponse:
+async def execute_job(
+    job_id: str,
+    job_engine: Annotated[JobEngine, Depends()],
+    orchestrator: Annotated[OrchestratorEngine, Depends()],
+) -> ExecuteJobResponse:
     """
     Triggers the actual migration execution (Phase 3) for a previously discovered job.
     Downloads the inventory, builds the DAG, and enqueues the first stage to Cloud Tasks.
 
     Args:
         job_id (str): The unique identifier of the job to execute.
+        job_engine (JobEngine): Injected engine for job state.
+        orchestrator (OrchestratorEngine): Injected DAG builder and executor.
 
     Returns:
         ExecuteJobResponse: Status payload.
@@ -113,8 +126,6 @@ async def execute_job(job_id: str) -> ExecuteJobResponse:
     Raises:
         HTTPException: If the job is not ready or the inventory cannot be found.
     """
-    from src.engines.orchestrator_engine import OrchestratorEngine
-
     job_data = job_engine.get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -128,7 +139,6 @@ async def execute_job(job_id: str) -> ExecuteJobResponse:
     try:
         inventory_data = gcp.get_inventory(job_id)
 
-        orchestrator = OrchestratorEngine()
         dag = orchestrator.build_dag(inventory_data)
 
         job_engine.set_job_status(job_id, "EXECUTING")
@@ -149,12 +159,16 @@ async def execute_job(job_id: str) -> ExecuteJobResponse:
 
 
 @job_router.get("/{job_id}/report", response_model=None)
-async def get_job_report(job_id: str) -> RedirectResponse | Any:
+async def get_job_report(
+    job_id: str,
+    job_engine: Annotated[JobEngine, Depends()],
+) -> RedirectResponse | Any:
     """
     Generates a secure download link for the completed migration report.
 
     Args:
         job_id (str): The unique identifier of the job.
+        job_engine (JobEngine): Injected engine for job state.
 
     Returns:
         RedirectResponse | Response: Redirects to a signed GCS URL or streams the file locally.
