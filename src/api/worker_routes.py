@@ -1,11 +1,12 @@
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.models import TaskResponse
 from src.core import gcp
 from src.core.monday_client import MondayClient
+from src.core.schemas import WorkerTaskRequest
 from src.core.state import StateManager
 from src.core.task_deps import CloudTaskQueue, GCSDagStorage
 from src.engines.execution_engine import ExecutionEngine
@@ -57,7 +58,7 @@ def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
 @worker_router.post("/{stage}", response_model=TaskResponse)
 async def handle_task(
     stage: str,
-    request: Request,
+    request_payload: WorkerTaskRequest,
     state_manager: Annotated[StateManager, Depends()],
     orchestration: Annotated[OrchestrationEngine, Depends(get_orchestration)],
 ) -> TaskResponse:
@@ -67,7 +68,7 @@ async def handle_task(
 
     Args:
         stage (str): The DAG stage currently being executed (e.g., 'boards', 'items').
-        request (Request): The incoming FastAPI HTTP request containing the Cloud Task payload.
+        request_payload (WorkerTaskRequest): The incoming validated Cloud Task payload.
         state_manager (StateManager): Injected dependency for job state and gating.
         orchestration (OrchestrationEngine): Injected dependency for triggering subsequent stages.
 
@@ -77,21 +78,12 @@ async def handle_task(
     Raises:
         HTTPException: If the payload is invalid, missing required fields, execution fails, or rate limits hit (429).
     """
-    try:
-        payload = await request.json()
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Failed to parse task payload: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    job_id = request_payload.job_id
+    task = request_payload.task
 
-    job_id = payload.get("job_id")
-    task = payload.get("task")
-
-    if not job_id or not task:
-        raise HTTPException(status_code=400, detail="Missing job_id or task in payload")
-
-    entity_type = task.get("entity_type")
-    source_id = task.get("source_id")
-    entity_payload = task.get("payload")
+    entity_type = task.entity_type
+    source_id = task.source_id
+    entity_payload = task.payload
 
     logger.info(
         f"Worker received {stage} task: Job {job_id} | Type {entity_type} | Source ID {source_id} | Payload Size: {len(str(entity_payload))} bytes"

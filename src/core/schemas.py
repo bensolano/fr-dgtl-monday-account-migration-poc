@@ -30,3 +30,8 @@ class MigrationDag(BaseModel):
     groups: list[TaskPayload] = Field(default_factory=list)
     columns: list[TaskPayload] = Field(default_factory=list)
     items: list[TaskPayload] = Field(default_factory=list)
+
+
+class WorkerTaskRequest(BaseModel):
+    job_id: str
+    task: TaskPayload
