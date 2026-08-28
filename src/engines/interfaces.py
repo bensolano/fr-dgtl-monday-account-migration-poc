@@ -42,3 +42,33 @@ class DiscovererInterface(Protocol):
     async def discover_full_account(self, output_path: str) -> dict[str, Any]:
         """Discovers the entire account and returns the inventory payload."""
         ...
+
+
+class StateInterface(Protocol):
+    """Protocol defining state tracking behavior (e.g. for DAG orchestration)."""
+
+    def initialize_dag_state(
+        self, job_id: str, dag: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        """Initializes the stage gating counters for a new DAG execution."""
+        ...
+
+
+class StorageInterface(Protocol):
+    """Protocol defining blob storage behavior for DAG persistence."""
+
+    def save_dag(self, job_id: str, dag: dict[str, list[dict[str, Any]]]) -> None:
+        """Saves a computed DAG to storage."""
+        ...
+
+    def load_dag(self, job_id: str) -> dict[str, list[dict[str, Any]]] | None:
+        """Loads a previously saved DAG from storage."""
+        ...
+
+
+class TaskQueueInterface(Protocol):
+    """Protocol defining task enqueueing behavior."""
+
+    def enqueue_task(self, job_id: str, stage: str, task: dict[str, Any]) -> None:
+        """Enqueues a single task payload to the specified stage queue."""
+        ...

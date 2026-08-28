@@ -13,9 +13,12 @@ from src.api.models import (
 )
 from src.core import gcp
 from src.core.monday_client import MondayClient
+from src.core.state import StateManager
+from src.core.task_deps import CloudTaskQueue, GCSDagStorage
 from src.engines.classification_engine import ClassificationEngine
 from src.engines.discovery_engine import DiscoveryEngine
 from src.engines.job_engine import JobEngine
+from src.engines.orchestrator_engine import OrchestratorEngine
 from src.engines.report_engine import ReportEngine
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,15 @@ def get_job_engine() -> JobEngine:
         classifier=ClassificationEngine(),
         reporter=ReportEngine(),
         discovery_factory=default_discovery_factory,
+    )
+
+
+def get_orchestrator() -> OrchestratorEngine:
+    """Dependency provider that wires infrastructure into OrchestratorEngine."""
+    return OrchestratorEngine(
+        state_manager=StateManager(),
+        dag_storage=GCSDagStorage(),
+        task_queue=CloudTaskQueue(),
     )
 
 
@@ -136,14 +148,11 @@ async def get_job_status(
     return JobStatusResponse(job_id=job_id, status=job_data.get("status", "UNKNOWN"))
 
 
-from src.engines.orchestrator_engine import OrchestratorEngine
-
-
 @job_router.post("/{job_id}/execute", response_model=ExecuteJobResponse)
 async def execute_job(
     job_id: str,
     job_engine: Annotated[JobEngine, Depends(get_job_engine)],
-    orchestrator: Annotated[OrchestratorEngine, Depends()],
+    orchestrator: Annotated[OrchestratorEngine, Depends(get_orchestrator)],
 ) -> ExecuteJobResponse:
     """
     Triggers the actual migration execution (Phase 3) for a previously discovered job.

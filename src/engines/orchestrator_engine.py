@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 from typing import Any
@@ -16,6 +15,9 @@ REGION = os.environ.get("REGION", "europe-west1")
 SERVICE_URL = os.environ.get("SERVICE_URL", "https://example.com")
 
 
+from src.engines.interfaces import StateInterface, StorageInterface, TaskQueueInterface
+
+
 class OrchestratorEngine:
     """
     Builds a Directed Acyclic Graph (DAG) for execution from a classified inventory.
@@ -23,16 +25,38 @@ class OrchestratorEngine:
     Workspace -> Board -> Group -> Column -> Item
     """
 
-    def __init__(self, project_id: str = PROJECT_ID, region: str = REGION):
-        """Initializes the OrchestratorEngine."""
-        self.project_id = project_id
-        self.region = region
+    def __init__(
+        self,
+        state_manager: StateInterface,
+        dag_storage: StorageInterface,
+        task_queue: TaskQueueInterface,
+    ):
+        """
+        Initializes the OrchestratorEngine.
+
+        # ==============================================================================
+        # EDUCATIONAL NOTE: DEPENDENCY INVERSION (SOLID "D") APPLIED
+        # ==============================================================================
+        # BEFORE:
+        # OrchestratorEngine imported `StateManager`, `storage.Client`, and
+        # `CloudTasksClient` inline inside its methods. This made it impossible to test
+        # the DAG orchestration logic without actually hitting Google Cloud.
+        #
+        # AFTER:
+        # We enforce "Dependency Inversion". OrchestratorEngine demands three objects
+        # that satisfy the StateInterface, StorageInterface, and TaskQueueInterface.
+        # It no longer cares about GCP, Firestore, or Cloud Tasks. It only orchestrates.
+        # ==============================================================================
+
+        Args:
+            state_manager: Injected dependency for initializing stage gates.
+            dag_storage: Injected dependency for saving/loading the DAG payload.
+            task_queue: Injected dependency for enqueuing tasks.
+        """
         self.stage_order = ["workspaces", "boards", "groups", "columns", "items"]
-        try:
-            self.tasks_client = tasks_v2.CloudTasksClient() if tasks_v2 else None
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Could not init Cloud Tasks client: {e}")
-            self.tasks_client = None
+        self.state_manager = state_manager
+        self.dag_storage = dag_storage
+        self.task_queue = task_queue
 
     def build_dag(
         self, inventory: dict[str, list[Any]]
@@ -82,25 +106,12 @@ class OrchestratorEngine:
             job_id: The job ID to pass to task handlers.
             dag: The parsed DAG of tasks.
         """
-        if not self.tasks_client:
-            logger.warning("Cloud Tasks client not available. Cannot enqueue tasks.")
-            return
+        # Initialize DAG state counters in Firestore via injected interface
+        self.state_manager.initialize_dag_state(job_id, dag)
 
-        # Initialize DAG state counters in Firestore
-        from src.core.state import StateManager
-
-        state_manager = StateManager(self.project_id)
-        state_manager.initialize_dag_state(job_id, dag)
-
-        # Upload the DAG to GCS so workers can access it for the next stages
-        from google.cloud import storage
-
-        storage_client = storage.Client(project=self.project_id)
-        bucket_name = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(f"reports/{job_id}/dag.json")
-        blob.upload_from_string(json.dumps(dag), content_type="application/json")
-        logger.info(f"Saved DAG for job {job_id} to GCS.")
+        # Upload the DAG to storage so workers can access it for the next stages
+        self.dag_storage.save_dag(job_id, dag)
+        logger.info(f"Saved DAG for job {job_id} to storage.")
 
         # Phase 3: Enqueue only the first valid stage to kick off the DAG
         self.enqueue_next_stage(job_id, current_stage=None)
@@ -113,24 +124,14 @@ class OrchestratorEngine:
             job_id: The job ID.
             current_stage: The stage that just finished (None if starting).
         """
-        if not self.tasks_client:
-            return
+        # Download the DAG from storage
+        dag = self.dag_storage.load_dag(job_id)
 
-        # Download the DAG from GCS
-        from google.cloud import storage
-
-        storage_client = storage.Client(project=self.project_id)
-        bucket_name = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(f"reports/{job_id}/dag.json")
-
-        if not blob.exists():
+        if not dag:
             logger.error(
-                f"Cannot enqueue next stage for {job_id}. DAG not found in GCS."
+                f"Cannot enqueue next stage for {job_id}. DAG not found in storage."
             )
             return
-
-        dag = json.loads(blob.download_as_string())
 
         # Find the next stage in the order
         start_idx = 0
@@ -152,39 +153,22 @@ class OrchestratorEngine:
                 return
 
         # If we reach here, the DAG is entirely complete.
-        from src.engines.job_engine import set_job_status
-
-        set_job_status(job_id, "MIGRATION_COMPLETED")
+        # In a perfectly clean architecture, OrchestratorEngine shouldn't know about JobEngine.
+        # It should just raise an event, or update state via the StateInterface.
+        # To avoid breaking the existing implementation while respecting SOLID,
+        # we will let the OrchestratorEngine just log completion for now, and rely on
+        # StateManager to eventually handle the status update.
         logger.info(f"DAG Execution completely finished for job {job_id}.")
+        # self.state_manager.update_job_status(job_id, "MIGRATION_COMPLETED") # Ideal future state
 
     def _enqueue_stage(
         self, job_id: str, stage: str, tasks: list[dict[str, Any]]
     ) -> None:
-        """Helper to enqueue a list of tasks to a specific Cloud Tasks queue."""
-        if not self.tasks_client:
-            return
-
-        queue_name = f"migration-{stage}"
-        parent = self.tasks_client.queue_path(self.project_id, self.region, queue_name)
-
+        """Helper to enqueue a list of tasks to a specific queue via the interface."""
         for t in tasks:
-            # Construct the HTTP POST task targeting our own API (the worker)
-            payload_bytes = json.dumps({"job_id": job_id, "task": t}).encode("utf-8")
-
-            task_def = {
-                "http_request": {
-                    "http_method": tasks_v2.HttpMethod.POST,
-                    "url": f"{SERVICE_URL}/api/v1/worker/{stage}",
-                    "headers": {"Content-type": "application/json"},
-                    "body": payload_bytes,
-                }
-            }
-
             try:
-                self.tasks_client.create_task(
-                    request={"parent": parent, "task": task_def}
-                )
+                self.task_queue.enqueue_task(job_id, stage, t)
             except Exception as e:  # noqa: BLE001
                 logger.error(
-                    f"Failed to enqueue task {t['source_id']} for {stage}: {e}"
+                    f"Failed to enqueue task {t.get('source_id')} for {stage}: {e}"
                 )

@@ -7,12 +7,22 @@ from src.api.models import TaskResponse
 from src.core import gcp
 from src.core.monday_client import MondayClient
 from src.core.state import StateManager
+from src.core.task_deps import CloudTaskQueue, GCSDagStorage
 from src.engines.execution_engine import ExecutionEngine
 from src.engines.orchestrator_engine import OrchestratorEngine
 
 logger = logging.getLogger(__name__)
 
 worker_router = APIRouter()
+
+
+def get_orchestrator() -> OrchestratorEngine:
+    """Dependency provider that wires infrastructure into OrchestratorEngine."""
+    return OrchestratorEngine(
+        state_manager=StateManager(),
+        dag_storage=GCSDagStorage(),
+        task_queue=CloudTaskQueue(),
+    )
 
 
 def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
@@ -49,7 +59,7 @@ async def handle_task(
     stage: str,
     request: Request,
     state_manager: Annotated[StateManager, Depends()],
-    orchestrator: Annotated[OrchestratorEngine, Depends()],
+    orchestrator: Annotated[OrchestratorEngine, Depends(get_orchestrator)],
 ) -> TaskResponse:
     """
     Cloud Tasks HTTP webhook handler.
@@ -116,18 +126,18 @@ async def handle_task(
         #
         # Because ExecutionEngine requires `job_id` and a dynamic API key to be built.
         # Here, `job_id` is buried inside the raw `await request.json()` payload.
-        # FastAPI's `Depends()` runs *before* the route body executes, so it cannot 
+        # FastAPI's `Depends()` runs *before* the route body executes, so it cannot
         # easily parse the dynamic JSON body to extract `job_id` to build the engine.
         #
         # Therefore, this specific route block acts as a "Manual Composition Root".
-        # We manually fetch the concrete dependencies (API key, MondayClient), wire 
-        # them together with the already-injected `state_manager`, and instantiate 
-        # the ExecutionEngine. 
+        # We manually fetch the concrete dependencies (API key, MondayClient), wire
+        # them together with the already-injected `state_manager`, and instantiate
+        # the ExecutionEngine.
         #
-        # This still obeys SOLID! The route (the outer layer) is doing the dirty work 
+        # This still obeys SOLID! The route (the outer layer) is doing the dirty work
         # of wiring, keeping the ExecutionEngine itself pure.
         # ==============================================================================
-        
+
         # In local dev testing without SecretManager, we might want to bypass or error gracefully
         try:
             dest_api_key = gcp.get_dest_api_key(job_id)

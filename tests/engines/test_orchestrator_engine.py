@@ -1,4 +1,14 @@
+from unittest.mock import MagicMock
+
 from src.engines.orchestrator_engine import OrchestratorEngine
+
+
+def get_mock_orchestrator():
+    return OrchestratorEngine(
+        state_manager=MagicMock(),
+        dag_storage=MagicMock(),
+        task_queue=MagicMock(),
+    )
 
 
 def test_build_dag_filters_manual_only():
@@ -11,7 +21,7 @@ def test_build_dag_filters_manual_only():
         "columns": [{"id": "c1", "title": "Dep Col", "classification": "manual_only"}],
     }
 
-    engine = OrchestratorEngine()
+    engine = get_mock_orchestrator()
     dag = engine.build_dag(inventory)
 
     assert len(dag["workspaces"]) == 1
@@ -26,6 +36,6 @@ def test_build_dag_filters_manual_only():
 
 
 def test_build_dag_order():
-    engine = OrchestratorEngine()
+    engine = get_mock_orchestrator()
     # The dictionary order is guaranteed to match stage_order in output
     assert engine.stage_order == ["workspaces", "boards", "groups", "columns", "items"]
