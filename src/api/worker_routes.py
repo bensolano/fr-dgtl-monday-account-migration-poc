@@ -9,16 +9,16 @@ from src.core.monday_client import MondayClient
 from src.core.state import StateManager
 from src.core.task_deps import CloudTaskQueue, GCSDagStorage
 from src.engines.execution_engine import ExecutionEngine
-from src.engines.orchestrator_engine import OrchestratorEngine
+from src.engines.orchestration_engine import OrchestrationEngine
 
 logger = logging.getLogger(__name__)
 
 worker_router = APIRouter()
 
 
-def get_orchestrator() -> OrchestratorEngine:
-    """Dependency provider that wires infrastructure into OrchestratorEngine."""
-    return OrchestratorEngine(
+def get_orchestration() -> OrchestrationEngine:
+    """Dependency provider that wires infrastructure into OrchestrationEngine."""
+    return OrchestrationEngine(
         state_manager=StateManager(),
         dag_storage=GCSDagStorage(),
         task_queue=CloudTaskQueue(),
@@ -59,7 +59,7 @@ async def handle_task(
     stage: str,
     request: Request,
     state_manager: Annotated[StateManager, Depends()],
-    orchestrator: Annotated[OrchestratorEngine, Depends(get_orchestrator)],
+    orchestration: Annotated[OrchestrationEngine, Depends(get_orchestration)],
 ) -> TaskResponse:
     """
     Cloud Tasks HTTP webhook handler.
@@ -69,7 +69,7 @@ async def handle_task(
         stage (str): The DAG stage currently being executed (e.g., 'boards', 'items').
         request (Request): The incoming FastAPI HTTP request containing the Cloud Task payload.
         state_manager (StateManager): Injected dependency for job state and gating.
-        orchestrator (OrchestratorEngine): Injected dependency for triggering subsequent stages.
+        orchestration (OrchestrationEngine): Injected dependency for triggering subsequent stages.
 
     Returns:
         TaskResponse: A success or skipped status payload.
@@ -164,8 +164,8 @@ async def handle_task(
             logger.info(
                 f"Stage '{plural_stage}' for job {job_id} is completely finished!"
             )
-            # Use the injected orchestrator to trigger the next stage
-            orchestrator.enqueue_next_stage(job_id, current_stage=plural_stage)
+            # Use the injected orchestration to trigger the next stage
+            orchestration.enqueue_next_stage(job_id, current_stage=plural_stage)
 
         return TaskResponse(status="success", dest_id=str(dest_id))
 

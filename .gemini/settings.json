@@ -1,0 +1,7 @@
+{
+  "tools": {
+    "run_shell_command": {
+      "require_confirmation": true
+    }
+  }
+}

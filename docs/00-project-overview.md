@@ -83,5 +83,5 @@ the middle.
 - `08-local-vs-prod-architecture.md` — details the execution flow, GCP services used/bypassed locally, and the differences between ADC and Service Account authentication.
 
 An implementing AI/engineer should read all four before writing code —
-the capability matrix and data models directly shape the orchestrator
+the capability matrix and data models directly shape the orchestration
 and task-handler logic.

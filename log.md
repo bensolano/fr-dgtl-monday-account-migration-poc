@@ -13,7 +13,8 @@
 
 ### 28.08
 
-- Refactor routes: create Pydantic models for responses, move business logic into dedicated files
+- Refactor routes: create Pydantic models for responses, move business logic into dedicated files, use FastAPI DI for engines
+- Study and apply SOLI"D3 principle in engines using Protocol and a callable factory
 
 TODO:
 - Finish reviewing docs/09-method-overview.md

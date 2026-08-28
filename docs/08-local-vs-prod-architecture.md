@@ -26,7 +26,7 @@ The third phase handles writing the discovered objects to the destination accoun
 *   **Both Environments:** To prevent duplicate entities during network retries, an ID map (`jobs/{job_id}/id_map/{entity_type}_{source_id}`) is stored in **Firestore**. Every creation mutation queries this map before proceeding. Local and Prod both execute this using standard Firestore Document SDK calls.
 
 ### Queueing & DAG Routing (Cloud Tasks)
-*   **Production (GCP):** The `OrchestratorEngine` parses the inventory into a strict DAG and dispatches the workloads as HTTP POST payloads into dedicated **Cloud Tasks Queues** (`migration-workspaces`, `migration-boards`, etc.). Cloud Tasks natively limits concurrency via `max_dispatches_per_second`.
+*   **Production (GCP):** The `OrchestrationEngine` parses the inventory into a strict DAG and dispatches the workloads as HTTP POST payloads into dedicated **Cloud Tasks Queues** (`migration-workspaces`, `migration-boards`, etc.). Cloud Tasks natively limits concurrency via `max_dispatches_per_second`.
 *   **Local Bypass:** Currently, testing Cloud Tasks locally requires pointing the Orchestrator to a mocked queue or running it sequentially.
 
 ### Rate Limiting (Token Bucket)

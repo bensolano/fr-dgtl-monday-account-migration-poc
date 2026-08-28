@@ -18,7 +18,7 @@ SERVICE_URL = os.environ.get("SERVICE_URL", "https://example.com")
 from src.engines.interfaces import StateInterface, StorageInterface, TaskQueueInterface
 
 
-class OrchestratorEngine:
+class OrchestrationEngine:
     """
     Builds a Directed Acyclic Graph (DAG) for execution from a classified inventory.
     Respects the strict Monday.com dependency order:
@@ -32,18 +32,18 @@ class OrchestratorEngine:
         task_queue: TaskQueueInterface,
     ):
         """
-        Initializes the OrchestratorEngine.
+        Initializes the OrchestrationEngine.
 
         # ==============================================================================
         # EDUCATIONAL NOTE: DEPENDENCY INVERSION (SOLID "D") APPLIED
         # ==============================================================================
         # BEFORE:
-        # OrchestratorEngine imported `StateManager`, `storage.Client`, and
+        # OrchestrationEngine imported `StateManager`, `storage.Client`, and
         # `CloudTasksClient` inline inside its methods. This made it impossible to test
         # the DAG orchestration logic without actually hitting Google Cloud.
         #
         # AFTER:
-        # We enforce "Dependency Inversion". OrchestratorEngine demands three objects
+        # We enforce "Dependency Inversion". OrchestrationEngine demands three objects
         # that satisfy the StateInterface, StorageInterface, and TaskQueueInterface.
         # It no longer cares about GCP, Firestore, or Cloud Tasks. It only orchestrates.
         # ==============================================================================
@@ -153,10 +153,10 @@ class OrchestratorEngine:
                 return
 
         # If we reach here, the DAG is entirely complete.
-        # In a perfectly clean architecture, OrchestratorEngine shouldn't know about JobEngine.
+        # In a perfectly clean architecture, OrchestrationEngine shouldn't know about JobEngine.
         # It should just raise an event, or update state via the StateInterface.
         # To avoid breaking the existing implementation while respecting SOLID,
-        # we will let the OrchestratorEngine just log completion for now, and rely on
+        # we will let the OrchestrationEngine just log completion for now, and rely on
         # StateManager to eventually handle the status update.
         logger.info(f"DAG Execution completely finished for job {job_id}.")
         # self.state_manager.update_job_status(job_id, "MIGRATION_COMPLETED") # Ideal future state

@@ -18,7 +18,7 @@ from src.core.task_deps import CloudTaskQueue, GCSDagStorage
 from src.engines.classification_engine import ClassificationEngine
 from src.engines.discovery_engine import DiscoveryEngine
 from src.engines.job_engine import JobEngine
-from src.engines.orchestrator_engine import OrchestratorEngine
+from src.engines.orchestration_engine import OrchestrationEngine
 from src.engines.report_engine import ReportEngine
 
 logger = logging.getLogger(__name__)
@@ -55,9 +55,9 @@ def get_job_engine() -> JobEngine:
     )
 
 
-def get_orchestrator() -> OrchestratorEngine:
-    """Dependency provider that wires infrastructure into OrchestratorEngine."""
-    return OrchestratorEngine(
+def get_orchestration() -> OrchestrationEngine:
+    """Dependency provider that wires infrastructure into OrchestrationEngine."""
+    return OrchestrationEngine(
         state_manager=StateManager(),
         dag_storage=GCSDagStorage(),
         task_queue=CloudTaskQueue(),
@@ -152,7 +152,7 @@ async def get_job_status(
 async def execute_job(
     job_id: str,
     job_engine: Annotated[JobEngine, Depends(get_job_engine)],
-    orchestrator: Annotated[OrchestratorEngine, Depends(get_orchestrator)],
+    orchestration: Annotated[OrchestrationEngine, Depends(get_orchestration)],
 ) -> ExecuteJobResponse:
     """
     Triggers the actual migration execution (Phase 3) for a previously discovered job.
@@ -161,7 +161,7 @@ async def execute_job(
     Args:
         job_id (str): The unique identifier of the job to execute.
         job_engine (JobEngine): Injected engine for job state.
-        orchestrator (OrchestratorEngine): Injected DAG builder and executor.
+        orchestration (OrchestrationEngine): Injected DAG builder and executor.
 
     Returns:
         ExecuteJobResponse: Status payload.
@@ -182,11 +182,11 @@ async def execute_job(
     try:
         inventory_data = gcp.get_inventory(job_id)
 
-        dag = orchestrator.build_dag(inventory_data)
+        dag = orchestration.build_dag(inventory_data)
 
         job_engine.set_job_status(job_id, "EXECUTING")
 
-        orchestrator.enqueue_dag(job_id, dag)
+        orchestration.enqueue_dag(job_id, dag)
 
         return ExecuteJobResponse(
             status="EXECUTING",

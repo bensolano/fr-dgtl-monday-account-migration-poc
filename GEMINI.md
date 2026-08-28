@@ -68,8 +68,12 @@ Based on our reference architecture, enforce the following implementation standa
 *   **Mandatory Update:** At the end of every significant implementation step or completed phase, you MUST update `docs/06-session-tracking.md` with the date, decisions made, the current state of work, and next steps.
 *   **Roadmap Sync:** Along with the session tracker, `docs/03-implementation-roadmap.md` MUST be kept up to date by checking off completed items and modifying the plan when moving forward.
 *   **Git Sync:** Keep the session tracker and roadmap aligned with git history.
-*   **Commit Confirmation:** You MUST explicitly ask the user for confirmation before executing any `git commit` commands. Never commit automatically without permission.
+*   **Commit Confirmation:** See Section 12.
 
 ## 11. Architecture Documentation
 *   **Keep Architecture Updated:** Whenever architectural decisions are made, new infrastructure is introduced, or we transition between local and production implementations, you MUST update `docs/08-local-vs-prod-architecture.md` to reflect the current state. This ensures our architectural blueprints remain accurate as the plan evolves.
 *   **Method Overview Sync:** The file `docs/09-method-overview.md` serves as the technical directory of the codebase. You MUST keep this file updated whenever adding new engines, modifying state management logic, or significantly refactoring core methods.
+
+## 12. Strict Tool Constraints
+*   **run_shell_command (Git):** You are strictly prohibited from executing `git commit` or `git commit --amend` via `run_shell_command` unless the user's *immediately preceding message* explicitly contains the instruction to "commit".
+*   **End of Task Workflow:** When you complete a feature or refactor, you must run `git status` and `git diff HEAD`, propose a draft commit message in plain text, and then **STOP**. Wait for the user to type "commit".

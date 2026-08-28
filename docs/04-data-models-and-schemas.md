@@ -59,7 +59,7 @@ Replaces the proposed in-memory rate limiter with a global, transactional Token 
   status: "pending" | "completed"
 }
 ```
-This schema gates the execution DAG. Initialized by the orchestrator before execution, tasks increment `completed_tasks` transactionally. When the counter reaches `total_tasks`, the orchestrator queues the subsequent stage.
+This schema gates the execution DAG. Initialized by the orchestration before execution, tasks increment `completed_tasks` transactionally. When the counter reaches `total_tasks`, the orchestration queues the subsequent stage.
 
 ## 2. BigQuery
 

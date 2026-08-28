@@ -2,7 +2,7 @@
 
 ## 2026-08-18 - Project Initialization
 **Decisions Made:**
-*   **Tech Stack:** Python (async) for the core orchestrator and API clients. Dependency and environment management is handled by `uv` (replacing `pip`/`venv`).
+*   **Tech Stack:** Python (async) for the core orchestration and API clients. Dependency and environment management is handled by `uv` (replacing `pip`/`venv`).
 *   **Code Quality:** Enforce `ruff` for all linting and formatting. `ruff check --fix .` and `ruff format .` must be run at the end of every implementation step.
 *   **Architecture & Clean Code:** Strict enforcement of SRP and DRY. Logic must be decoupled (e.g., separating Exceptions from API Clients).
 *   **Documentation:** Enforce strict Google-style docstrings (Args/Returns) for all methods.
@@ -61,16 +61,16 @@
 *   Added fallback logic to proxy report downloads when local signed URL generation fails.
 *   Set up dedicated Cloud Run Job image with correct entrypoint.
 *   Implemented Firestore-backed `StateManager` (`src/core/state.py`) to manage idempotency mappings (`get_dest_id`, `set_dest_id`) before execution.
-*   Implemented `OrchestratorEngine` (`src/engines/orchestrator_engine.py`) to parse classified inventories into a staged DAG, properly filtering out `manual_only` tasks and enforcing execution order.
+*   Implemented `OrchestrationEngine` (`src/engines/orchestration_engine.py`) to parse classified inventories into a staged DAG, properly filtering out `manual_only` tasks and enforcing execution order.
 *   Updated `terraform/main.tf` to provision dedicated Cloud Tasks queues for Phase 3 Execution (Workspaces, Boards, Groups, Columns, Items).
-*   Added `google-cloud-tasks` client library and updated `OrchestratorEngine.enqueue_dag` to push the first stage of valid items directly to GCP queues.
+*   Added `google-cloud-tasks` client library and updated `OrchestrationEngine.enqueue_dag` to push the first stage of valid items directly to GCP queues.
 *   Implemented FastAPI worker endpoints (`src/api/worker_routes.py`) to receive Cloud Tasks payloads and execute the required idempotency checks via `StateManager`.
 *   Refactored FastAPI route structure to separate concerns: `job_routes.py` for Discovery triggers and `worker_routes.py` for DAG execution, orchestrated by `src/api/main.py`.
 *   Implemented `TokenBucket` proactive rate limiting in `StateManager` using Firestore transactions.
 *   Modified `MondayClient._execute_query_with_retries` to support `distributed=True`, returning complexity metadata and raising `MondayRateLimitError` to leverage Cloud Tasks native backoff instead of localized `asyncio.sleep`.
 *   Implemented `ExecutionEngine` (`src/engines/execution_engine.py`) to map source payloads (workspaces, boards, groups, columns, items) into explicit Monday.com GraphQL creation mutations.
 *   Updated FastAPI worker routes (`src/api/worker_routes.py`) to fetch the `dest_api_key` securely, instantiate the `ExecutionEngine`, and sync complexity budgets post-execution.
-*   Implemented Stage Gating in `StateManager` using Firestore transactions (`initialize_dag_state`, `mark_task_complete`). The orchestrator seeds the task counters per stage, and worker routes decrement them upon success, firing an event when a stage hits zero to continue DAG execution.
+*   Implemented Stage Gating in `StateManager` using Firestore transactions (`initialize_dag_state`, `mark_task_complete`). The orchestration seeds the task counters per stage, and worker routes decrement them upon success, firing an event when a stage hits zero to continue DAG execution.
 *   Added `POST /api/v1/jobs/{job_id}/execute` to `job_routes.py` to formally trigger Phase 3 Execution. This reads the saved `inventory.json` from GCS, builds the DAG, saves it to `dag.json`, and enqueues the first valid stage to Cloud Tasks.
 *   Wired up the stage gating cascade in `worker_routes.py` so that finishing the final task of a stage pulls the DAG and dynamically enqueues the next stage sequentially.
 *   Updated the React Frontend (`frontend/src/App.tsx`) to support Phase 3. Added the "Confirm & Execute Migration" button, the polling loop for `EXECUTING`, and the terminal `MIGRATION_COMPLETED` status view.
@@ -92,7 +92,7 @@
 *   Replaced explicit `JSONResponse` returns with `HTTPException` raises (e.g., status 429) in `handle_task` to comply with static typing.
 *   Created `src/core/gcp.py` containing `GCPClients` singleton and utility methods (`store_job_secrets`, `get_dest_api_key`, `trigger_cloud_run_discovery_job`, `get_inventory`, etc.).
 *   Refactored `src/api/job_routes.py` and `src/api/worker_routes.py` to strip out raw GCP SDK logic in favor of `src.core.gcp`.
-*   Refactored `job_routes.py` and `worker_routes.py` to inject `JobEngine`, `StateManager`, and `OrchestratorEngine` directly into endpoints via `Depends()`.
+*   Refactored `job_routes.py` and `worker_routes.py` to inject `JobEngine`, `StateManager`, and `OrchestrationEngine` directly into endpoints via `Depends()`.
 *   Verified that `uv run ruff check --fix .`, `uv run ruff format .`, and `uv run pytest` pass successfully.
 
 **Next Up:**
