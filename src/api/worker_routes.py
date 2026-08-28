@@ -108,6 +108,26 @@ async def handle_task(
 
     # 3. Execution
     try:
+        # ==============================================================================
+        # EDUCATIONAL NOTE: THE DYNAMIC COMPOSITION ROOT
+        # ==============================================================================
+        # Wait, if FastAPI routing is the Composition Root, why aren't we injecting
+        # ExecutionEngine via `Depends()` in the route signature?
+        #
+        # Because ExecutionEngine requires `job_id` and a dynamic API key to be built.
+        # Here, `job_id` is buried inside the raw `await request.json()` payload.
+        # FastAPI's `Depends()` runs *before* the route body executes, so it cannot 
+        # easily parse the dynamic JSON body to extract `job_id` to build the engine.
+        #
+        # Therefore, this specific route block acts as a "Manual Composition Root".
+        # We manually fetch the concrete dependencies (API key, MondayClient), wire 
+        # them together with the already-injected `state_manager`, and instantiate 
+        # the ExecutionEngine. 
+        #
+        # This still obeys SOLID! The route (the outer layer) is doing the dirty work 
+        # of wiring, keeping the ExecutionEngine itself pure.
+        # ==============================================================================
+        
         # In local dev testing without SecretManager, we might want to bypass or error gracefully
         try:
             dest_api_key = gcp.get_dest_api_key(job_id)
