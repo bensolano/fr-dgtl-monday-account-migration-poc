@@ -10,10 +10,9 @@
 | Orchestrator | Cloud Run (service) or Workflows | Turns confirmed scope into a dependency-ordered task DAG, enqueues Cloud Tasks. |
 | Task handler | Cloud Run (service), invoked by Cloud Tasks | Executes one object-copy operation per invocation (create one board / one item / one file / etc). |
 | Rate limiter | Library/middleware inside task handler + Cloud Tasks queue config | Token-bucket against monday's complexity budget, per source/destination token. |
-| State store | Firestore | Per-object status, ID mapping, retry counts, job metadata. |
+| State store | Firestore | Per-object status, ID mapping, retry counts, job metadata, complexity budget, and stage gating counters. |
 | Inventory/audit store | BigQuery | Structured event log: one row per discovered object and per copy attempt, for reporting and the final report. |
 | Secrets | Secret Manager | Source/destination API keys, scoped per job ID, with TTL cleanup. |
-| Event fan-out | Pub/Sub | Stage-completion signals (e.g., "board X structure done" → triggers item-copy tasks for that board). |
 | Scheduled cleanup | Cloud Scheduler | Purges expired job secrets/state after N days. |
 | Dashboards | Looker Studio (on BigQuery) or in-portal view | Live progress + final report rendering. |
 
@@ -34,7 +33,6 @@ graph TD
         Orchestrator["Orchestrator (Cloud Run)"]
         CloudTasks["Cloud Tasks Queue"]
         TaskHandler["Task Handler (Cloud Run)"]
-        PubSub["Event Fan-out (Pub/Sub)"]
     end
     
     subgraph Storage
@@ -55,11 +53,9 @@ graph TD
     Portal -->|6. Triggers| Orchestrator
     Orchestrator -->|Builds DAG & Enqueues| CloudTasks
     CloudTasks -->|Dispatches| TaskHandler
-    TaskHandler -->|Checks Idempotency| Firestore
-    TaskHandler -->|Updates State| Firestore
+    TaskHandler -->|Checks Idempotency & Gating| Firestore
     TaskHandler -->|Logs Attempt| BigQuery
-    TaskHandler -->|Signals Complete| PubSub
-    PubSub -->|Next Stage| Orchestrator
+    TaskHandler -->|Final Task of Stage Triggers Next| Orchestrator
 ```
 
 
@@ -88,10 +84,12 @@ graph TD
 6. **Orchestration** — Orchestrator reads confirmed scope, builds the
    dependency DAG (workspaces → boards → groups → columns → items →
    subitems → updates → files → docs), and enqueues the first stage's
-   tasks into Cloud Tasks. Later stages are enqueued in response to
-   Pub/Sub "stage complete" events rather than all at once, so
-   dependent IDs (e.g., new column IDs needed for item column-values)
-   are guaranteed to exist before they're referenced.
+   tasks into Cloud Tasks. Later stages are enqueued dynamically.
+   When the task handler finishes an object, it transactionally decrements
+   the stage's remaining task counter in Firestore. The worker that hits
+   zero (meaning the stage is complete) triggers the Orchestrator to
+   enqueue the next stage. This guarantees dependent IDs exist before
+   they're referenced.
 7. **Execution** — Cloud Tasks dispatches to the Task Handler service at
    a rate governed by queue config (`max_dispatches_per_second`,
    `max_concurrent_dispatches`) *and* an in-handler token bucket that
