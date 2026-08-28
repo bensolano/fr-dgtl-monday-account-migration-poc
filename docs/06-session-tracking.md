@@ -97,3 +97,23 @@
 
 **Next Up:**
 *   Continue with Phase 4 (Reporting & Ops).
+
+## 2026-08-28 - Pydantic Refactoring & DAG Documentation
+**Decisions Made:**
+*   **Data Models:** Replaced untyped `dict[str, Any]` payloads throughout the core engines (`OrchestrationEngine`, `StateManager`, `TaskDeps`) with strict Pydantic models to enforce type safety and validation.
+*   **Documentation:** Formalized the mental model of the DAG in `docs/04-data-models-and-schemas.md` as a strict sequential pipeline (`workspaces` -> `boards` -> `groups` -> `columns` -> `items`) gated by completion counters, rather than a graph of individual task-level dependencies.
+*   **FastAPI Routing:** Removed the "dynamic composition root" workaround in `worker_routes.py` and replaced the raw `Request` injection with a validated `WorkerTaskRequest` Pydantic model.
+
+**Current State:**
+*   Created `src/core/schemas.py` containing `MigrationDag`, `TaskPayload`, `JobDocument`, and `WorkerTaskRequest`.
+*   Refactored `src/engines/interfaces.py` to type hint the new Pydantic models.
+*   Updated `OrchestrationEngine` to construct and return a `MigrationDag` object.
+*   Updated `StateManager` to parse job documents into `JobDocument` and process `MigrationDag` objects.
+*   Updated `CloudTaskQueue` and `GCSDagStorage` in `task_deps.py` to serialize/deserialize Pydantic models via `.model_dump_json()` and `.model_validate_json()`.
+*   Refactored `worker_routes.py` `handle_task` endpoint to accept `WorkerTaskRequest`, removing manual JSON parsing.
+*   Fixed unit tests in `test_state.py` and `test_orchestration_engine.py` to accommodate object attribute access instead of dictionary bracket notation.
+*   Updated `docs/04-data-models-and-schemas.md` to accurately reflect the DAG stage gating architecture and the updated Cloud Tasks payload shape.
+*   Verified that all tests and linters pass.
+
+**Next Up:**
+*   Continue with Phase 4 (Reporting & Ops).
