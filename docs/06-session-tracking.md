@@ -78,12 +78,14 @@
 **Next Up:**
 *   **Phase 4 (Reporting & Ops):** BigQuery events table, final execution actuals vs plan, and Cloud Scheduler purges.
 
-## 2026-08-28 - Bug Fixes
+## 2026-08-28 - Bug Fixes, Pydantic Refactoring & DAG Documentation
 **Decisions Made:**
-*   Fixed a Pydantic schema generation error in FastAPI for endpoints returning non-JSON responses (`RedirectResponse`, `Response`).
-*   Audited all API routes to ensure they return Pydantic schema-friendly models.
-*   Enforced "thin controllers" by moving all GCP client initialization and business logic (Secret Manager, Cloud Run, Cloud Storage) out of the FastAPI routers and into a dedicated `src/core/gcp.py` module.
-*   Enforced the use of FastAPI Dependency Injection (`Annotated[ClassName, Depends()]`) for all business engines instead of module-level global state, updating `GEMINI.md` to reflect this architectural rule.
+*   **API Layer:** Fixed a Pydantic schema generation error in FastAPI for endpoints returning non-JSON responses (`RedirectResponse`, `Response`), and audited all API routes to ensure they return Pydantic schema-friendly models.
+*   **Thin Controllers:** Enforced "thin controllers" by moving all GCP client initialization and business logic (Secret Manager, Cloud Run, Cloud Storage) out of the FastAPI routers and into a dedicated `src/core/gcp.py` module.
+*   **Dependency Injection:** Enforced the use of FastAPI Dependency Injection (`Annotated[ClassName, Depends()]`) for all business engines instead of module-level global state, updating `GEMINI.md` to reflect this architectural rule.
+*   **Data Models:** Replaced untyped `dict[str, Any]` payloads throughout the core engines (`OrchestrationEngine`, `StateManager`, `TaskDeps`) with strict Pydantic models to enforce type safety and validation.
+*   **Documentation:** Formalized the mental model of the DAG in `docs/04-data-models-and-schemas.md` as a strict sequential pipeline (`workspaces` -> `boards` -> `groups` -> `columns` -> `items`) gated by completion counters, rather than a graph of individual task-level dependencies.
+*   **FastAPI Routing:** Removed the "dynamic composition root" workaround in `worker_routes.py` and replaced the raw `Request` injection with a validated `WorkerTaskRequest` Pydantic model.
 
 **Current State:**
 *   Added `response_model=None` to `job_routes.py` `/{job_id}/report` endpoint to prevent FastAPI from failing on schema generation.
@@ -93,18 +95,6 @@
 *   Created `src/core/gcp.py` containing `GCPClients` singleton and utility methods (`store_job_secrets`, `get_dest_api_key`, `trigger_cloud_run_discovery_job`, `get_inventory`, etc.).
 *   Refactored `src/api/job_routes.py` and `src/api/worker_routes.py` to strip out raw GCP SDK logic in favor of `src.core.gcp`.
 *   Refactored `job_routes.py` and `worker_routes.py` to inject `JobEngine`, `StateManager`, and `OrchestrationEngine` directly into endpoints via `Depends()`.
-*   Verified that `uv run ruff check --fix .`, `uv run ruff format .`, and `uv run pytest` pass successfully.
-
-**Next Up:**
-*   Continue with Phase 4 (Reporting & Ops).
-
-## 2026-08-28 - Pydantic Refactoring & DAG Documentation
-**Decisions Made:**
-*   **Data Models:** Replaced untyped `dict[str, Any]` payloads throughout the core engines (`OrchestrationEngine`, `StateManager`, `TaskDeps`) with strict Pydantic models to enforce type safety and validation.
-*   **Documentation:** Formalized the mental model of the DAG in `docs/04-data-models-and-schemas.md` as a strict sequential pipeline (`workspaces` -> `boards` -> `groups` -> `columns` -> `items`) gated by completion counters, rather than a graph of individual task-level dependencies.
-*   **FastAPI Routing:** Removed the "dynamic composition root" workaround in `worker_routes.py` and replaced the raw `Request` injection with a validated `WorkerTaskRequest` Pydantic model.
-
-**Current State:**
 *   Created `src/core/schemas.py` containing `MigrationDag`, `TaskPayload`, `JobDocument`, and `WorkerTaskRequest`.
 *   Refactored `src/engines/interfaces.py` to type hint the new Pydantic models.
 *   Updated `OrchestrationEngine` to construct and return a `MigrationDag` object.
