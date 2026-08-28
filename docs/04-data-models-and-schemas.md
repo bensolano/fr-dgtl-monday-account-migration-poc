@@ -175,6 +175,8 @@ Each task represents exactly one object-copy operation. The payload reflects the
 }
 ```
 
+*Note on Retries (The Re-enqueue Pattern):* When a task encounters an empty Token Bucket, it does not rely on Cloud Tasks' native HTTP 429 backoff. Instead, it creates a new task using this **exact same payload shape**, but sets the Cloud Tasks `schedule_time` parameter to the exact moment the rate limit resets, and returns `200 OK` for the current execution.
+
 *Note on Dependencies:* Earlier designs proposed a `depends_on: [string]` field resolved dynamically at execution time. This has been replaced by **stage gating**. The Orchestration Engine guarantees that no task for a stage (e.g., `groups`) is enqueued until all tasks for its prerequisite stage (e.g., `boards`) have completed fully and their IDs are mapped in the `id_map` collection.
 
 ## 4. Rate-limiter state (per job, per direction)

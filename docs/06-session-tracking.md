@@ -107,4 +107,6 @@
 *   Verified that all tests and linters pass.
 
 **Next Up:**
+*   **Refactor Rate Limiting:** Implement the Re-enqueue Pattern in `worker_routes.py` and `StateManager` to dynamically reschedule Cloud Tasks based on exact rate limit reset times instead of returning HTTP 429s.
+*   **Local Execution Fallback:** Implement a bounded `asyncio.Queue` worker pool tied to the FastAPI lifecycle to simulate Cloud Tasks execution locally without requiring external GCP queueing infrastructure.
 *   Continue with Phase 4 (Reporting & Ops).

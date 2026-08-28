@@ -114,19 +114,15 @@ graph TD
 
 - **Single Global Execution Token Bucket**: During execution (writes), the system maintains a single transactional token bucket in Firestore (`jobs/{job_id}/state/complexity_bucket`) to govern the destination token's complexity budget.
 - **Budget Syncing**: The bucket's capacity is driven by real `complexity.after` and `reset_in_x_seconds` values returned directly in the metadata of every successful live API response (tracked in `src/engines/execution_engine.py` via `_sync_complexity`). We treat the live server value as ground truth over local estimates.
-- **Coarse vs Fine Governing**: Cloud Tasks queue settings (`max_dispatches_per_second` configured in Terraform) act as a hardware-level coarse ceiling. The Token Bucket inside the `worker_routes.py` handler is the precise proactive governor, yielding HTTP 429s back to Cloud Tasks to pause queues gracefully when tokens run low, relying on the queue's native retry backoff configuration.
+- **Dynamic Re-enqueue Pattern (No Sleeps):** It is a serverless anti-pattern for Cloud Run containers to `sleep()` when hitting a rate limit, as this consumes concurrency slots and incurs unnecessary compute costs. Instead, if a worker encounters an empty token bucket or a `COMPLEXITY_BUDGET_EXHAUSTED` error from Monday.com, it uses the **Re-enqueue Pattern**. The worker calculates the precise reset time, programmatically creates a new Cloud Task that is a clone of the current request, sets its `schedule_time` to the exact future reset moment, and immediately returns `200 OK`. This frees the container instantly.
 - **Batched Mutations**: To minimize HTTP overhead, the system prefers using batch mutations like `change_multiple_column_values` where possible, but execution tasks are dispatched one-per-entity to ensure precise idempotency and rollback safety.
 
 ## 4. Retry & failure handling
 
-- Cloud Tasks native retry config: exponential backoff with jitter for
-  transient 5xx and 429s.
-- `ComplexityException` (429-equivalent): yields an HTTP 429 back to Cloud Tasks to trigger native backoff queues.
-- Permanent failures (validation errors, missing required field, column
-  type unsupported on destination) → do not retry; mark `failed_permanent`
-  in Firestore and route to the final report's manual-review section.
-- After N retries on a transient error, route to a dead-letter queue
-  (separate Cloud Tasks queue or Pub/Sub DLQ topic) for operator review.
+- **The Thundering Herd & Sibling Queues:** Because of Stage Gating, tasks currently in a queue are independent siblings. If the token bucket empties, incoming tasks will rapidly bounce off the empty bucket and re-enqueue themselves into the future. At the exact reset second, a "thundering herd" of tasks will become eligible simultaneously. Cloud Tasks will dispatch them based on `max_concurrent_dispatches`. The first tasks will consume the restored budget, and subsequent tasks will bounce forward again. This naturally and cost-effectively distributes the workload precisely around Monday's dynamic limits.
+- **Generic Network Errors:** For transient 5xx errors or network timeouts, the system relies on Cloud Tasks' native queue configuration (exponential backoff with jitter).
+- **Permanent failures (validation errors, missing required field, column type unsupported on destination):** Do not retry. The worker marks the entity as `failed_permanent` in Firestore and routes it to the final report's manual-review section.
+- After N retries on a transient error, route to a dead-letter queue (separate Cloud Tasks queue or Pub/Sub DLQ topic) for operator review.
 
 ## 5. Security notes
 

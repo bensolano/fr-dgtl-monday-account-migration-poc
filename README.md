@@ -19,7 +19,7 @@ For deep dives into the system design, consult the `/docs` folder:
 *   **Classification Engine**: Cross-referencing against Monday's capability matrix to surface blocked fields.
 *   **Orchestration DAG**: Transforming inventory into an explicitly ordered graph (Workspaces -> Boards -> Groups -> Columns -> Items) to adhere to strict parent-child constraints.
 *   **Cloud Tasks Execution**: Queuing workloads asynchronously across dedicated GCP Cloud Tasks queues with rate limits per stage.
-*   **Proactive Rate Limiting**: Global `TokenBucket` maintained in Firestore interacting natively with Cloud Tasks backoffs.
+*   **Proactive Rate Limiting**: Global `TokenBucket` maintained in Firestore using a dynamic Re-enqueue pattern for precise, cost-effective scheduling around Monday.com rate limits.
 *   **Idempotency Engine**: Firestore `source_id -> dest_id` mapping preventing duplicate entity creation on network retries.
 
 ## Local Development & Testing

@@ -18,13 +18,16 @@
 - Add Pydantic models where dicts where used
 - Add schemas to docs
 - Reviewed docs/09-method-overview.md
+- Apply provisioned cloud task to infra
+- Study and plan implem of re-enqueue pattern for tasks
+- Study and plan implem of local pattern to replace cloud tasks
 
 TODO:
 - Test migration phase
 - Add cancel job button in UI for pending jobs
 - Add estimated discovery time in UI
 - Add static info section in report containing concise version of the migration capabilit matrix
-- Implement pydantic BaseSettings for env vars
+- Implement pydantic BaseSettings for env vars, add env vars to docs
 - Add delete button by job_id
-- The 02-architecture.md file describes an idealized design where the handler passes a dynamic Retry-After header back to Cloud Tasks. However, Cloud Tasks HTTP target queues do not natively parse
-  Retry-After headers to dynamically adjust their retry schedule; they strictly follow the queue-level retry configuration.
+- Use re-enqueue system for tasks using token bucket
+- 

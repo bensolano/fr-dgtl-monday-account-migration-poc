@@ -27,11 +27,11 @@ The third phase handles writing the discovered objects to the destination accoun
 
 ### Queueing & DAG Routing (Cloud Tasks)
 *   **Production (GCP):** The `OrchestrationEngine` parses the inventory into a strict DAG and dispatches the workloads as HTTP POST payloads into dedicated **Cloud Tasks Queues** (`migration-workspaces`, `migration-boards`, etc.). Cloud Tasks natively limits concurrency via `max_dispatches_per_second`.
-*   **Local Bypass:** Currently, testing Cloud Tasks locally requires pointing the Orchestrator to a mocked queue or running it sequentially.
+*   **Local Bypass:** To simulate Cloud Tasks locally without crashing the server or requiring a routable web URL, the local environment uses an **In-Memory Asynchronous Worker Pool**. Instead of dispatching HTTP POST requests, the mocked `CloudTaskQueue` drops `TaskPayload` objects into a bounded `asyncio.Queue`. A fixed pool of background worker tasks (tied to the FastAPI application lifecycle) polls this queue and calls the `handle_task` function directly. If a rate limit is hit locally, the worker sleeps (`await asyncio.sleep()`), perfectly simulating Cloud Tasks pausing the queue while preserving the serverless integrity of the production deployment.
 
 ### Rate Limiting (Token Bucket)
 *   **Both Environments:** Monday.com tracks "complexity points." We manage this via a transactional **Token Bucket** in Firestore (`jobs/{job_id}/state/complexity_bucket`). 
-    *   **Proactive Throttle:** `src/api/worker_routes.py` estimates the cost of an operation and attempts to deduct tokens. If the budget is exhausted, it immediately returns an **HTTP 429** back to Cloud Tasks, triggering a native queue pause.
+    *   **Proactive Throttle (Re-enqueue Pattern):** `src/api/worker_routes.py` estimates the cost of an operation and attempts to deduct tokens. If the budget is exhausted, it does *not* wait in the container or return an HTTP 429. Instead, it extracts the reset time, programmatically re-enqueues a clone of the current task into Cloud Tasks with a `schedule_time` set to the exact future reset moment, and returns a `200 OK`. This prevents container bloat and minimizes compute costs while ensuring precise retry scheduling.
     *   **Reactive Sync:** When the `MondayClient` successfully executes a query, it reads the live `complexity` metadata from the response and updates the Firestore bucket directly, keeping local approximations tightly calibrated to reality.
 
 ### Stage Gating
