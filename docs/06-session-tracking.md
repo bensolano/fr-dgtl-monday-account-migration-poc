@@ -130,6 +130,8 @@
 *   Modified `handle_task` to catch general exceptions, retry up to 3 times with exponential backoff, and ultimately route permanent failures to the DLQ in Firestore.
 *   Updated `LocalTaskQueue` to drop `500` errors instead of infinite looping, deferring to the new application-level retry logic.
 *   Updated `docs/03-implementation-roadmap.md` to check off Phase 3 retry policy constraints since exact re-enqueue delays and DLQ are fully implemented. 
+*   **CLEAN Architecture Refactor:** Extracted the mathematical logic for the Token Bucket into a pure `TokenBucketRateLimiter` class (SRP) in `src/core/rate_limit.py` and extracted time calculations into `src/core/time_utils.py`.
+*   **Dependency Inversion (DIP):** Removed all inline instantiations of the `StateManager` and rate limiter. `ExecutionEngine` and `JobEngine` now strictly rely on `StateInterface`. `StateManager` now accepts `TokenBucketInterface` as an injected dependency, natively wired via FastAPI's composition root in `job_routes.py` and `worker_routes.py`.
 
 **Next Up:**
 *   Continue with Phase 4 (Reporting & Ops).
