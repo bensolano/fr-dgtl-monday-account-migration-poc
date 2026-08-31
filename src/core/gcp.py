@@ -8,7 +8,7 @@ from google.cloud import run_v2, secretmanager, storage
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
+PROJECT_ID = os.environ.get("PROJECT_ID", "sandbox-bsolano")
 REGION = os.environ.get("REGION", "europe-west1")
 REPORTS_BUCKET = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
 DISCOVERY_JOB_NAME = os.environ.get("DISCOVERY_JOB_NAME")
