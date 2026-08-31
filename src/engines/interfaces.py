@@ -1,5 +1,7 @@
+import datetime
 from typing import Any, Protocol
 
+from src.core.rate_limit import TokenBucketResult
 from src.core.schemas import JobDocument, MigrationDag, TaskPayload
 
 # ==============================================================================
@@ -16,6 +18,16 @@ from src.core.schemas import JobDocument, MigrationDag, TaskPayload
 # This allows complete decoupling: JobEngine only knows about these "shapes"
 # of objects, not the actual objects themselves.
 # ==============================================================================
+
+
+class TokenBucketInterface(Protocol):
+    """Protocol defining the mathematical evaluation of a token bucket."""
+
+    def evaluate(
+        self, current_tokens: int, last_reset: datetime.datetime, required_tokens: int
+    ) -> TokenBucketResult:
+        """Evaluates if enough tokens exist, returning the allowed status and new bucket state."""
+        ...
 
 
 class ClassifierInterface(Protocol):

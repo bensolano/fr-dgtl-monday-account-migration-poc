@@ -1,10 +1,11 @@
+import datetime
 import logging
 import os
 
 from google.cloud import firestore
 
-from src.core.rate_limit import TokenBucketRateLimiter
 from src.core.schemas import DeadLetterDocument, JobDocument, MigrationDag, TaskPayload
+from src.engines.interfaces import TokenBucketInterface
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +17,20 @@ class StateManager:
     Manages job state and idempotency mappings in Firestore.
     """
 
-    def __init__(self, project_id: str = PROJECT_ID):
+    def __init__(
+        self,
+        project_id: str = PROJECT_ID,
+        rate_limiter: TokenBucketInterface | None = None,
+    ):
         """
         Initializes the StateManager with a Firestore client.
 
         Args:
             project_id (str): The GCP project ID for Firestore.
+            rate_limiter (TokenBucketInterface | None): Injected pure mathematical rate limiter.
         """
         self.project_id = project_id
+        self.rate_limiter = rate_limiter
         try:
             self.db = firestore.Client(project=project_id)
         except Exception as e:  # noqa: BLE001
@@ -125,8 +132,6 @@ class StateManager:
         Returns:
             tuple[bool, int]: (True, 0) if safe to proceed, (False, seconds_until_reset) if rate limited.
         """
-        import datetime
-
         if not self.db:
             return True, 0  # Allow pass-through for local dev without Firestore
 
@@ -158,8 +163,14 @@ class StateManager:
                         last_reset = last_reset_val
 
                 # Delegate the math to the pure domain logic class (SRP)
-                limiter = TokenBucketRateLimiter()
-                result = limiter.evaluate(current_tokens, last_reset, required_tokens)
+                if not self.rate_limiter:
+                    raise RuntimeError(
+                        "TokenBucketInterface dependency not injected into StateManager"
+                    )
+
+                result = self.rate_limiter.evaluate(
+                    current_tokens, last_reset, required_tokens
+                )
 
                 if result.allowed:
                     # Deduct and allow
@@ -186,8 +197,6 @@ class StateManager:
             actual_remaining: The exact remaining complexity points.
             reset_in_seconds: The exact seconds until the next refill.
         """
-        import datetime
-
         if not self.db:
             return
 

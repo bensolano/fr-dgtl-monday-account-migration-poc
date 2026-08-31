@@ -11,6 +11,7 @@ from src.engines.interfaces import (
     ClassifierInterface,
     DiscovererInterface,
     ReporterInterface,
+    StateInterface,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class JobEngine:
         classifier: ClassifierInterface,
         reporter: ReporterInterface,
         discovery_factory: Callable[[str], DiscovererInterface],
+        state_manager: StateInterface | None = None,
         project_id: str | None = None,
         reports_bucket: str | None = None,
     ):
@@ -61,12 +63,14 @@ class JobEngine:
             classifier: An injected instance satisfying the ClassifierInterface.
             reporter: An injected instance satisfying the ReporterInterface.
             discovery_factory: A function that takes an API key and returns a Discoverer.
+            state_manager: An injected instance satisfying the StateInterface.
             project_id: The GCP project ID. Defaults to env var PROJECT_ID.
             reports_bucket: The GCS bucket for reports. Defaults to env var REPORTS_BUCKET.
         """
         self.classifier = classifier
         self.reporter = reporter
         self.discovery_factory = discovery_factory
+        self.state_manager = state_manager
 
         self.project_id = project_id or os.environ.get(
             "PROJECT_ID", "local-dev-project"
@@ -136,6 +140,11 @@ class JobEngine:
         Returns:
             The job document dictionary, or None if it doesn't exist.
         """
+        if self.state_manager:
+            # Prefer using the injected StateInterface if provided to align with DIP
+            job = self.state_manager.get_job(job_id)
+            return job.model_dump() if job else None
+
         if not self.db:
             return None
 

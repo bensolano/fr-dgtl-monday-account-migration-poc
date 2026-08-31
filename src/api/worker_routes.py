@@ -7,6 +7,7 @@ from src.api.models import TaskResponse
 from src.core import gcp, time_utils
 from src.core.exceptions import MondayRateLimitError
 from src.core.monday_client import MondayClient
+from src.core.rate_limit import TokenBucketRateLimiter
 from src.core.schemas import WorkerTaskRequest
 from src.core.state import StateManager
 from src.core.task_deps import GCSDagStorage, get_task_queue
@@ -18,10 +19,17 @@ logger = logging.getLogger(__name__)
 worker_router = APIRouter()
 
 
-def get_orchestration() -> OrchestrationEngine:
+def get_state_manager() -> StateManager:
+    """Dependency provider for StateManager with injected rate limiter."""
+    return StateManager(rate_limiter=TokenBucketRateLimiter())
+
+
+def get_orchestration(
+    state_manager: Annotated[StateManager, Depends(get_state_manager)],
+) -> OrchestrationEngine:
     """Dependency provider that wires infrastructure into OrchestrationEngine."""
     return OrchestrationEngine(
-        state_manager=StateManager(),
+        state_manager=state_manager,
         dag_storage=GCSDagStorage(),
         task_queue=get_task_queue(),
     )
@@ -31,6 +39,7 @@ def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
     """
     Estimates the GraphQL complexity cost of creating an entity.
     This allows the Token Bucket to proactively rate limit based on realistic payload weights.
+
 
     Args:
         entity_type (str): The type of the entity (workspace, board, group, column, item).
@@ -60,7 +69,7 @@ def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:
 async def handle_task(
     stage: str,
     request_payload: WorkerTaskRequest,
-    state_manager: Annotated[StateManager, Depends()],
+    state_manager: Annotated[StateManager, Depends(get_state_manager)],
     orchestration: Annotated[OrchestrationEngine, Depends(get_orchestration)],
 ) -> TaskResponse:
     """

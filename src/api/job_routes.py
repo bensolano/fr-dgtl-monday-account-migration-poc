@@ -13,6 +13,7 @@ from src.api.models import (
 )
 from src.core import gcp
 from src.core.monday_client import MondayClient
+from src.core.rate_limit import TokenBucketRateLimiter
 from src.core.state import StateManager
 from src.core.task_deps import GCSDagStorage, get_task_queue
 from src.engines.classification_engine import ClassificationEngine
@@ -46,19 +47,29 @@ def default_discovery_factory(api_key: str) -> DiscoveryEngine:
     return DiscoveryEngine(client=client)
 
 
-def get_job_engine() -> JobEngine:
+def get_state_manager() -> StateManager:
+    """Dependency provider for StateManager with injected rate limiter."""
+    return StateManager(rate_limiter=TokenBucketRateLimiter())
+
+
+def get_job_engine(
+    state_manager: Annotated[StateManager, Depends(get_state_manager)],
+) -> JobEngine:
     """Dependency provider that wires concrete engines into JobEngine."""
     return JobEngine(
         classifier=ClassificationEngine(),
         reporter=ReportEngine(),
+        state_manager=state_manager,
         discovery_factory=default_discovery_factory,
     )
 
 
-def get_orchestration() -> OrchestrationEngine:
+def get_orchestration(
+    state_manager: Annotated[StateManager, Depends(get_state_manager)],
+) -> OrchestrationEngine:
     """Dependency provider that wires infrastructure into OrchestrationEngine."""
     return OrchestrationEngine(
-        state_manager=StateManager(),
+        state_manager=state_manager,
         dag_storage=GCSDagStorage(),
         task_queue=get_task_queue(),
     )
