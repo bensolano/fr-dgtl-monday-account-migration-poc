@@ -16,15 +16,36 @@ DISCOVERY_JOB_NAME = os.environ.get("DISCOVERY_JOB_NAME")
 
 class GCPClients:
     def __init__(self) -> None:
-        try:
-            self.storage_client = storage.Client(project=PROJECT_ID)
-            self.secret_client = secretmanager.SecretManagerServiceClient()
-            self.run_client = run_v2.JobsClient()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Failed to initialize GCP clients (ensure ADC is set): {e}")
-            self.storage_client = None
-            self.secret_client = None
-            self.run_client = None
+        self._storage_client = None
+        self._secret_client = None
+        self._run_client = None
+
+    @property
+    def storage_client(self):
+        if self._storage_client is None:
+            try:
+                self._storage_client = storage.Client(project=PROJECT_ID)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Storage client: {e}")
+        return self._storage_client
+
+    @property
+    def secret_client(self):
+        if self._secret_client is None:
+            try:
+                self._secret_client = secretmanager.SecretManagerServiceClient()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Secret Manager client: {e}")
+        return self._secret_client
+
+    @property
+    def run_client(self):
+        if self._run_client is None:
+            try:
+                self._run_client = run_v2.JobsClient()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Cloud Run client: {e}")
+        return self._run_client
 
 
 gcp_clients = GCPClients()

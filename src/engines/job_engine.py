@@ -79,17 +79,37 @@ class JobEngine:
             "REPORTS_BUCKET", "local-dev-reports-bucket"
         )
 
-        try:
-            self.db = firestore.Client(project=self.project_id)
-            self.storage_client = storage.Client(project=self.project_id)
-            self.secret_client = secretmanager.SecretManagerServiceClient()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(
-                f"Failed to initialize GCP clients in JobEngine (ensure ADC is set): {e}"
-            )
-            self.db = None
-            self.storage_client = None
-            self.secret_client = None
+        # Lazy load clients to prevent multiprocessing/forking issues
+        self._db = None
+        self._storage_client = None
+        self._secret_client = None
+
+    @property
+    def db(self):
+        if self._db is None:
+            try:
+                self._db = firestore.Client(project=self.project_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Firestore client: {e}")
+        return self._db
+
+    @property
+    def storage_client(self):
+        if self._storage_client is None:
+            try:
+                self._storage_client = storage.Client(project=self.project_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Storage client: {e}")
+        return self._storage_client
+
+    @property
+    def secret_client(self):
+        if self._secret_client is None:
+            try:
+                self._secret_client = secretmanager.SecretManagerServiceClient()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Secret Manager client: {e}")
+        return self._secret_client
 
     def has_firestore(self) -> bool:
         """Checks if Firestore is initialized."""

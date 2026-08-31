@@ -23,7 +23,7 @@ class StateManager:
         rate_limiter: TokenBucketInterface | None = None,
     ):
         """
-        Initializes the StateManager with a Firestore client.
+        Initializes the StateManager.
 
         Args:
             project_id (str): The GCP project ID for Firestore.
@@ -31,13 +31,18 @@ class StateManager:
         """
         self.project_id = project_id
         self.rate_limiter = rate_limiter
-        try:
-            self.db = firestore.Client(project=project_id)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(
-                f"Failed to initialize Firestore client in StateManager: {e}"
-            )
-            self.db = None
+        self._db = None
+
+    @property
+    def db(self):
+        if self._db is None:
+            try:
+                self._db = firestore.Client(project=self.project_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    f"Failed to initialize Firestore client in StateManager: {e}"
+                )
+        return self._db
 
     def get_job(self, job_id: str) -> JobDocument | None:
         """

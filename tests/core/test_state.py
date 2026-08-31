@@ -38,6 +38,8 @@ def test_get_job_exists(mock_firestore_client):
     mock_document.get.return_value = mock_doc
 
     manager = StateManager()
+    # Explicitly set the mock db since it's lazy loaded now
+    manager._db = mock_firestore_client
     result = manager.get_job("job123")
 
     assert result.status == "PENDING"
@@ -63,6 +65,7 @@ def test_get_dest_id_exists(mock_firestore_client):
     mock_id_doc.get.return_value = mock_doc
 
     manager = StateManager()
+    manager._db = mock_firestore_client
     result = manager.get_dest_id("job123", "board", "src123")
 
     assert result == "dest456"
@@ -81,6 +84,7 @@ def test_set_dest_id(mock_firestore_client):
     mock_id_map.document.return_value = mock_id_doc
 
     manager = StateManager()
+    manager._db = mock_firestore_client
     with patch("src.core.state.firestore") as mock_firestore_module:
         mock_firestore_module.SERVER_TIMESTAMP = "TIMESTAMP"
         manager.set_dest_id("job123", "board", "src123", "dest456")
