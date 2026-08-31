@@ -123,6 +123,13 @@ class JobEngine:
             "updated_at": datetime.datetime.now(datetime.UTC),
         }
 
+        # Ensure JobDocument required fields are present if we are initializing a PENDING job
+        if status == "PENDING":
+            update_data["job_id"] = job_id
+            update_data["operator_email"] = "system@local"
+            update_data["source_account"] = {"secret_ref": f"job-{job_id}-source-key"}
+            update_data["dest_account"] = {"secret_ref": "pending"}
+
         if report_path:
             update_data["report_path"] = report_path
         if error:
