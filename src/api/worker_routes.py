@@ -4,7 +4,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from src.api.models import TaskResponse
-from src.core import gcp
+from src.core import gcp, time_utils
 from src.core.exceptions import MondayRateLimitError
 from src.core.monday_client import MondayClient
 from src.core.schemas import WorkerTaskRequest
@@ -186,10 +186,8 @@ async def handle_task(
             logger.info(
                 f"Retrying task (attempt {task.retry_count}/{MAX_RETRIES}) for {entity_type} {source_id}"
             )
-            import time
 
-            # Exponential backoff: 2, 4, 8 seconds
-            schedule_time = time.time() + (2**task.retry_count)
+            schedule_time = time_utils.calculate_exponential_backoff(task.retry_count)
             orchestration.task_queue.enqueue_task(
                 job_id, stage, task, schedule_time=schedule_time
             )
@@ -198,7 +196,7 @@ async def handle_task(
             logger.error(
                 f"Task permanently failed after {MAX_RETRIES} retries. Moving to Dead Letter Queue."
             )
-            state_manager.save_dead_letter(job_id, stage, task.model_dump(), str(e))
+            state_manager.save_dead_letter(job_id, stage, task, str(e))
 
             # CRITICAL: We must mark the task as "complete" in the stage counter even if it failed,
             # otherwise the DAG stage will never reach 100% and will hang forever.

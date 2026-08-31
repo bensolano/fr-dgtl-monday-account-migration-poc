@@ -8,6 +8,7 @@ erDiagram
     JOB ||--o{ ID_MAP : tracks
     JOB ||--o{ DAG_STATE : controls
     JOB ||--|| COMPLEXITY_BUCKET : governs
+    JOB ||--o{ DEAD_LETTERS : captures
     
     JOB {
         string job_id PK
@@ -34,6 +35,13 @@ erDiagram
     COMPLEXITY_BUCKET {
         int remaining_tokens
         timestamp last_reset
+    }
+    DEAD_LETTERS {
+        string doc_id PK
+        string stage
+        object task
+        string error
+        timestamp failed_at
     }
     
     JOB ||--o{ INVENTORY_EVENTS : logs_discovery
@@ -130,6 +138,22 @@ graph LR
 *   **Initialization:** Before execution, the orchestration engine writes one document per stage (e.g., `boards: {total_tasks: 50, completed_tasks: 0, status: "pending"}`).
 *   **Progress Tracking:** As Cloud Task workers finish migrating individual objects, they transactionally increment `completed_tasks`.
 *   **Stage Gating:** When `completed_tasks` reaches `total_tasks` for a given stage, the current stage is marked `status: "completed"`, and the orchestrator is triggered to enqueue all Cloud Tasks for the subsequent stage in the pipeline.
+
+### `jobs/{job_id}/dead_letters/{doc_id}`
+```
+{
+  stage: string,
+  task: {
+    entity_type: string,
+    source_id: string,
+    payload: object,
+    retry_count: number
+  },
+  error: string,
+  failed_at: timestamp
+}
+```
+This collection serves as the application-level Dead Letter Queue (DLQ). If a worker encounters a permanent error (e.g. schema validation failure, column type mismatch) or exhausts its maximum exponential backoff retries, the payload is permanently stored here for manual review. Crucially, dead-lettered tasks are still marked as "complete" in the `dag_state` to prevent starving the pipeline.
 
 ## 2. BigQuery
 

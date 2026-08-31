@@ -3,7 +3,8 @@ import os
 
 from google.cloud import firestore
 
-from src.core.schemas import JobDocument, MigrationDag
+from src.core import time_utils
+from src.core.schemas import DeadLetterDocument, JobDocument, MigrationDag, TaskPayload
 
 logger = logging.getLogger(__name__)
 
@@ -157,30 +158,26 @@ class StateManager:
                         last_reset = last_reset_val
 
                 # If more than 60 seconds have passed since last reset, refill the bucket
-                elapsed = (
-                    datetime.datetime.now(datetime.UTC) - last_reset
-                ).total_seconds()
-                if elapsed > 60:
+                if time_utils.has_window_expired(last_reset, window_seconds=60):
                     current_tokens = 5000000
                     last_reset = datetime.datetime.now(datetime.UTC)
 
-            if current_tokens >= required_tokens:
-                # Deduct and allow
-                transaction.set(
-                    ref,
-                    {
-                        "remaining_tokens": current_tokens - required_tokens,
-                        "last_reset": last_reset,
-                    },
-                )
-                return True, 0
-            else:
-                # Reject, calculate how many seconds until the 60s window expires
-                elapsed = (
-                    datetime.datetime.now(datetime.UTC) - last_reset
-                ).total_seconds()
-                retry_in = max(1, int(60 - elapsed))
-                return False, retry_in
+                if current_tokens >= required_tokens:
+                    # Deduct and allow
+                    transaction.set(
+                        ref,
+                        {
+                            "remaining_tokens": current_tokens - required_tokens,
+                            "last_reset": last_reset,
+                        },
+                    )
+                    return True, 0
+                else:
+                    # Reject, calculate how many seconds until the 60s window expires
+                    retry_in = time_utils.calculate_seconds_until_reset(
+                        last_reset, window_seconds=60
+                    )
+                    return False, retry_in
 
         return update_in_transaction(self.db.transaction(), bucket_ref)
 
@@ -286,7 +283,7 @@ class StateManager:
         return update_and_check(self.db.transaction(), stage_ref)
 
     def save_dead_letter(
-        self, job_id: str, stage: str, task: dict, error_message: str
+        self, job_id: str, stage: str, task: TaskPayload, error_message: str
     ) -> None:
         """
         Saves a permanently failed task to the dead letter queue in Firestore.
@@ -294,7 +291,7 @@ class StateManager:
         Args:
             job_id (str): The current job ID.
             stage (str): The stage the task was in.
-            task (dict): The task payload dump.
+            task (TaskPayload): The task payload.
             error_message (str): The final error message that caused the failure.
         """
         if not self.db:
@@ -309,11 +306,13 @@ class StateManager:
             .collection("dead_letters")
             .document()
         )
-        dlq_ref.set(
-            {
-                "stage": stage,
-                "task": task,
-                "error": error_message,
-                "failed_at": firestore.SERVER_TIMESTAMP,
-            }
+
+        doc = DeadLetterDocument(
+            stage=stage,
+            task=task,
+            error=error_message,
         )
+
+        doc_data = doc.model_dump()
+        doc_data["failed_at"] = firestore.SERVER_TIMESTAMP
+        dlq_ref.set(doc_data)

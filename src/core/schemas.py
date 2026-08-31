@@ -25,6 +25,13 @@ class TaskPayload(BaseModel):
     retry_count: int = Field(default=0)
 
 
+class DeadLetterDocument(BaseModel):
+    stage: str
+    task: TaskPayload
+    error: str
+    failed_at: datetime | None = None
+
+
 class MigrationDag(BaseModel):
     workspaces: list[TaskPayload] = Field(default_factory=list)
     boards: list[TaskPayload] = Field(default_factory=list)
