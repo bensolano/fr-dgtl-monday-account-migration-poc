@@ -284,3 +284,36 @@ class StateManager:
             return is_done
 
         return update_and_check(self.db.transaction(), stage_ref)
+
+    def save_dead_letter(
+        self, job_id: str, stage: str, task: dict, error_message: str
+    ) -> None:
+        """
+        Saves a permanently failed task to the dead letter queue in Firestore.
+
+        Args:
+            job_id (str): The current job ID.
+            stage (str): The stage the task was in.
+            task (dict): The task payload dump.
+            error_message (str): The final error message that caused the failure.
+        """
+        if not self.db:
+            logger.error(
+                f"Local DLQ Fallback - Job {job_id} | Stage {stage} | Error: {error_message}"
+            )
+            return
+
+        dlq_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("dead_letters")
+            .document()
+        )
+        dlq_ref.set(
+            {
+                "stage": stage,
+                "task": task,
+                "error": error_message,
+                "failed_at": firestore.SERVER_TIMESTAMP,
+            }
+        )

@@ -95,17 +95,17 @@ async def local_worker_loop(worker_id: int, service_url: str = "http://127.0.0.1
                 # HTTP request to simulate Cloud Tasks POST webhook
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 429:
+                    # Generic rate limit fallback
                     await asyncio.sleep(1.0)
                     await _local_queue.put((stage, payload))
                 elif resp.status_code >= 500:
                     logger.error(
-                        f"Worker {worker_id} encountered server error: {resp.text}"
+                        f"Worker {worker_id} encountered severe server error: {resp.text}"
                     )
-                    await asyncio.sleep(2.0)
-                    await _local_queue.put((stage, payload))
+                    # We drop the task here since application-level retries are handled in handle_task via 200 OK requeues.
+                    # If it's a true 500, it means the server crashed before handling it. We drop to avoid infinite loops.
             except Exception as e:  # noqa: BLE001
-                logger.error(f"Worker {worker_id} failed to process task: {e}")
-                await asyncio.sleep(2.0)
-                await _local_queue.put((stage, payload))
+                logger.error(f"Worker {worker_id} network failure: {e}")
+                # Network level failure, also drop to avoid infinite loops
             finally:
                 _local_queue.task_done()

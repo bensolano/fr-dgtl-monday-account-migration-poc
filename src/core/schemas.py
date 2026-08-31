@@ -22,6 +22,7 @@ class TaskPayload(BaseModel):
     entity_type: str
     source_id: str
     payload: dict[str, Any]
+    retry_count: int = Field(default=0)
 
 
 class MigrationDag(BaseModel):

@@ -116,15 +116,20 @@
 **Decisions Made:**
 *   **Rate Limiting:** Adopted the Re-enqueue Pattern for rate limit mitigation. Instead of throwing HTTP 429s which rely on generic Cloud Tasks backoff, workers now return `200 OK` but explicitly re-enqueue tasks with a `schedule_time` offset by the exact exact rate limit `retry_in` seconds, preserving budget efficiency and tight schedules.
 *   **Local Simulation:** Bypassed the need for live GCP Cloud Tasks by injecting a lightweight, FastAPI-lifespan-tied `LocalTaskQueue`. Background loops intercept task messages in `asyncio.Queue` and send local HTTP POST requests, natively mimicking Cloud Tasks webhooks and providing a complete offline testing cycle.
+*   **Dead Letter Queue (DLQ):** Implemented an application-level DLQ. Tasks now carry a `retry_count` in their payload. Non-rate-limit exceptions cause the worker to increment the counter and re-enqueue (up to 3 times) with exponential backoff. Upon total exhaustion, the task is saved to a `dead_letters` collection in Firestore, marked as completed in the DAG so it doesn't hang the pipeline, and safely dropped.
 
 **Current State:**
 *   Updated `CloudTaskQueue.enqueue_task` in `src/core/task_deps.py` to accept `schedule_time` (converting it into `timestamp_pb2` payload).
-*   Implemented `LocalTaskQueue` and `local_worker_loop` in `src/core/task_deps.py` backed by `asyncio.Queue` and `httpx`.
+*   Implemented `LocalTaskQueue` and `local_worker_loop` in `src/core/local_queue.py` backed by `asyncio.Queue` and `httpx`.
 *   Tied the `local_worker_loop` to the FastAPI application startup via `@asynccontextmanager` lifespan in `src/api/main.py`.
 *   Added `get_task_queue()` factory to `src/core/task_deps.py` and modified `worker_routes.py` and `job_routes.py` dependency providers to use it dynamically based on the `K_SERVICE` environment variable.
 *   Updated `StateManager.consume_budget()` in `src/core/state.py` to return a tuple `(bool, int)` supplying the exact `retry_in` delay in seconds when a budget check fails.
 *   Modified the `handle_task` endpoint in `worker_routes.py` to catch `MondayRateLimitError` and budget-exhaustion states by computing a future `schedule_time`, re-enqueueing the task via `orchestration.task_queue.enqueue_task`, and returning a 200 `skipped` response.
-*   Updated `docs/03-implementation-roadmap.md` to check off Phase 3 retry policy constraints since exact re-enqueue delays are fully implemented. 
+*   Modified `TaskPayload` schema to include `retry_count`.
+*   Added `save_dead_letter` method to `StateManager`.
+*   Modified `handle_task` to catch general exceptions, retry up to 3 times with exponential backoff, and ultimately route permanent failures to the DLQ in Firestore.
+*   Updated `LocalTaskQueue` to drop `500` errors instead of infinite looping, deferring to the new application-level retry logic.
+*   Updated `docs/03-implementation-roadmap.md` to check off Phase 3 retry policy constraints since exact re-enqueue delays and DLQ are fully implemented. 
 
 **Next Up:**
 *   Continue with Phase 4 (Reporting & Ops).

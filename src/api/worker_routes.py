@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from src.api.models import TaskResponse
 from src.core import gcp
@@ -177,7 +177,38 @@ async def handle_task(
             job_id, stage, task, schedule_time=schedule_time
         )
         return TaskResponse(status="skipped", reason="rate_limited_requeued")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to execute mutation for {entity_type} {source_id}: {e}")
-        # Pass 500 errors to Cloud Tasks which will retry based on its config
-        raise HTTPException(status_code=500, detail=str(e)) from e
+
+        MAX_RETRIES = 3
+        if task.retry_count < MAX_RETRIES:
+            task.retry_count += 1
+            logger.info(
+                f"Retrying task (attempt {task.retry_count}/{MAX_RETRIES}) for {entity_type} {source_id}"
+            )
+            import time
+
+            # Exponential backoff: 2, 4, 8 seconds
+            schedule_time = time.time() + (2**task.retry_count)
+            orchestration.task_queue.enqueue_task(
+                job_id, stage, task, schedule_time=schedule_time
+            )
+            return TaskResponse(status="skipped", reason="transient_error_requeued")
+        else:
+            logger.error(
+                f"Task permanently failed after {MAX_RETRIES} retries. Moving to Dead Letter Queue."
+            )
+            state_manager.save_dead_letter(job_id, stage, task.model_dump(), str(e))
+
+            # CRITICAL: We must mark the task as "complete" in the stage counter even if it failed,
+            # otherwise the DAG stage will never reach 100% and will hang forever.
+            plural_stage = f"{entity_type}s"
+            is_stage_done = state_manager.mark_task_complete(job_id, plural_stage)
+
+            if is_stage_done:
+                logger.info(
+                    f"Stage '{plural_stage}' for job {job_id} is completely finished (with some dead letters)!"
+                )
+                orchestration.enqueue_next_stage(job_id, current_stage=plural_stage)
+
+            return TaskResponse(status="failed", reason="dead_lettered")
