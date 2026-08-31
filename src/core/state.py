@@ -3,7 +3,7 @@ import os
 
 from google.cloud import firestore
 
-from src.core import time_utils
+from src.core.rate_limit import TokenBucketRateLimiter
 from src.core.schemas import DeadLetterDocument, JobDocument, MigrationDag, TaskPayload
 
 logger = logging.getLogger(__name__)
@@ -157,27 +157,21 @@ class StateManager:
                     else:
                         last_reset = last_reset_val
 
-                # If more than 60 seconds have passed since last reset, refill the bucket
-                if time_utils.has_window_expired(last_reset, window_seconds=60):
-                    current_tokens = 5000000
-                    last_reset = datetime.datetime.now(datetime.UTC)
+                # Delegate the math to the pure domain logic class (SRP)
+                limiter = TokenBucketRateLimiter()
+                result = limiter.evaluate(current_tokens, last_reset, required_tokens)
 
-                if current_tokens >= required_tokens:
+                if result.allowed:
                     # Deduct and allow
                     transaction.set(
                         ref,
                         {
-                            "remaining_tokens": current_tokens - required_tokens,
-                            "last_reset": last_reset,
+                            "remaining_tokens": result.new_tokens,
+                            "last_reset": result.new_last_reset,
                         },
                     )
-                    return True, 0
-                else:
-                    # Reject, calculate how many seconds until the 60s window expires
-                    retry_in = time_utils.calculate_seconds_until_reset(
-                        last_reset, window_seconds=60
-                    )
-                    return False, retry_in
+
+                return result.allowed, result.retry_in
 
         return update_in_transaction(self.db.transaction(), bucket_ref)
 

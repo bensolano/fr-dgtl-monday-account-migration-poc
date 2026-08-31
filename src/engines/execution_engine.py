@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 from src.core.monday_client import MondayClient
-from src.core.state import StateManager
+from src.engines.interfaces import StateInterface
 
 logger = logging.getLogger(__name__)
 
@@ -12,13 +12,15 @@ class ExecutionEngine:
     Executes actual GraphQL mutations against the destination Monday.com account.
     """
 
-    def __init__(self, client: MondayClient, state_manager: StateManager, job_id: str):
+    def __init__(
+        self, client: MondayClient, state_manager: StateInterface, job_id: str
+    ):
         """
         Initializes the ExecutionEngine.
 
         Args:
             client: The configured Monday.com API client for the destination account.
-            state_manager: The state manager for tracking idempotency mappings.
+            state_manager: The state manager interface for tracking idempotency mappings.
             job_id: The ID of the current migration job.
         """
         self.client = client

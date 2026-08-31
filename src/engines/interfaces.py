@@ -1,6 +1,6 @@
 from typing import Any, Protocol
 
-from src.core.schemas import MigrationDag, TaskPayload
+from src.core.schemas import JobDocument, MigrationDag, TaskPayload
 
 # ==============================================================================
 # EDUCATIONAL NOTE: WHAT ARE PROTOCOLS?
@@ -47,10 +47,46 @@ class DiscovererInterface(Protocol):
 
 
 class StateInterface(Protocol):
-    """Protocol defining state tracking behavior (e.g. for DAG orchestration)."""
+    """Protocol defining state tracking, idempotency, and budget behavior."""
+
+    def get_job(self, job_id: str) -> JobDocument | None:
+        """Retrieves the state of a migration job."""
+        ...
+
+    def get_dest_id(self, job_id: str, entity_type: str, source_id: str) -> str | None:
+        """Retrieves the destination ID for a given source ID to ensure idempotency."""
+        ...
+
+    def set_dest_id(
+        self, job_id: str, entity_type: str, source_id: str, dest_id: str
+    ) -> None:
+        """Stores the destination ID mapped to the source ID for future idempotency checks."""
+        ...
+
+    def consume_budget(
+        self, job_id: str, required_tokens: int = 50000
+    ) -> tuple[bool, int]:
+        """Proactively checks if the global token bucket has enough tokens and deducts them."""
+        ...
+
+    def sync_budget(
+        self, job_id: str, actual_remaining: int, reset_in_seconds: int
+    ) -> None:
+        """Reactively syncs the token bucket with the exact numbers returned by Monday API."""
+        ...
 
     def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
         """Initializes the stage gating counters for a new DAG execution."""
+        ...
+
+    def mark_task_complete(self, job_id: str, stage: str) -> bool:
+        """Increments the completion counter for a stage and returns True if fully complete."""
+        ...
+
+    def save_dead_letter(
+        self, job_id: str, stage: str, task: TaskPayload, error_message: str
+    ) -> None:
+        """Saves a permanently failed task to the dead letter queue."""
         ...
 
 
@@ -69,6 +105,12 @@ class StorageInterface(Protocol):
 class TaskQueueInterface(Protocol):
     """Protocol defining task enqueueing behavior."""
 
-    def enqueue_task(self, job_id: str, stage: str, task: TaskPayload) -> None:
+    def enqueue_task(
+        self,
+        job_id: str,
+        stage: str,
+        task: TaskPayload,
+        schedule_time: float | None = None,
+    ) -> None:
         """Enqueues a single task payload to the specified stage queue."""
         ...
