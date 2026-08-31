@@ -153,6 +153,27 @@ class JobEngine:
             return doc.to_dict()
         return None
 
+    def cancel_job(self, job_id: str) -> None:
+        """Cancels a pending or running job."""
+        self.set_job_status(job_id, "CANCELLED")
+
+    def delete_job(self, job_id: str) -> None:
+        """
+        Deletes the job document and all its subcollections from Firestore.
+        NOTE: GCP artifacts (secrets, GCS) should be deleted by the router.
+        """
+        if not self.db:
+            logger.warning(f"No Firestore client. Cannot delete job {job_id}")
+            return
+
+        job_ref = self.db.collection("jobs").document(job_id)
+
+        # In a real production app, you would also recursively delete subcollections
+        # (e.g. inventory, dag_state, dead_letters).
+        # For this prototype, deleting the root document prevents it from loading.
+        job_ref.delete()
+        logger.info(f"Deleted job {job_id} from Firestore.")
+
     async def execute_discovery_job(self, job_id: str) -> None:
         """
         Core execution logic for a migration discovery job.

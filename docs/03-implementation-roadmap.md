@@ -75,7 +75,7 @@
       traversing the DAG in opposite directions (forward for resume,
       reverse for rollback), and both reuse the same Cloud Tasks +
       rate-limiter path as forward migration.
-- [ ] **Explicit consent UI** — separate confirmation steps for read
+- [x] **Explicit consent UI** — separate confirmation steps for read
       access (discovery) and write access (execution), since two
       different customers' credentials are involved.
 - [ ] **Cost/time estimate shown before execution starts**, not just in

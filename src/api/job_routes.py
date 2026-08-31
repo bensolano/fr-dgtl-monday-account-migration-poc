@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
 from src.api.models import (
+    ExecuteJobRequest,
     ExecuteJobResponse,
     JobCreateRequest,
     JobCreateResponse,
@@ -98,7 +99,7 @@ async def create_job(
 
     # Secure API Keys in Secret Manager
     try:
-        gcp.store_job_secrets(job_id, request.source_api_key, request.dest_api_key)
+        gcp.store_job_secrets(job_id, request.source_api_key)
     except Exception as e:
         logger.error(f"Failed to store secrets in Secret Manager: {e}")
         raise HTTPException(
@@ -162,6 +163,7 @@ async def get_job_status(
 @job_router.post("/{job_id}/execute", response_model=ExecuteJobResponse)
 async def execute_job(
     job_id: str,
+    request: ExecuteJobRequest,
     job_engine: Annotated[JobEngine, Depends(get_job_engine)],
     orchestration: Annotated[OrchestrationEngine, Depends(get_orchestration)],
 ) -> ExecuteJobResponse:
@@ -171,6 +173,7 @@ async def execute_job(
 
     Args:
         job_id (str): The unique identifier of the job to execute.
+        request (ExecuteJobRequest): The payload containing the destination API key.
         job_engine (JobEngine): Injected engine for job state.
         orchestration (OrchestrationEngine): Injected DAG builder and executor.
 
@@ -191,6 +194,7 @@ async def execute_job(
         )
 
     try:
+        gcp.store_dest_secret(job_id, request.dest_api_key)
         inventory_data = gcp.get_inventory(job_id)
 
         dag = orchestration.build_dag(inventory_data)
@@ -267,3 +271,29 @@ async def get_job_report(
         raise HTTPException(
             status_code=500, detail="Failed to retrieve report from storage"
         ) from e
+
+
+@job_router.post("/{job_id}/cancel")
+async def cancel_job(
+    job_id: str,
+    job_engine: Annotated[JobEngine, Depends(get_job_engine)],
+) -> Any:
+    """Cancels a job that is currently pending or running."""
+    job_data = job_engine.get_job(job_id)
+    if not job_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_engine.cancel_job(job_id)
+    return {"status": "CANCELLED", "message": "Job cancelled successfully"}
+
+
+@job_router.delete("/{job_id}")
+async def delete_job(
+    job_id: str,
+    job_engine: Annotated[JobEngine, Depends(get_job_engine)],
+) -> Any:
+    """Deletes all artifacts, secrets, and Firestore state for a job."""
+    gcp.delete_job_secrets(job_id)
+    gcp.delete_gcs_artifacts(job_id)
+    job_engine.delete_job(job_id)
+    return {"status": "DELETED", "message": "Job deleted successfully"}

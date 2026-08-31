@@ -6,6 +6,40 @@ import './App.css';
 // In local development, we hit the FastAPI server directly on port 8000.
 const API_BASE_URL = import.meta.env.PROD ? '/api/v1' : 'http://localhost:8000/api/v1';
 
+const CapabilityMatrix = () => (
+  <div className="capability-matrix">
+    <h3>Migration Capability Matrix</h3>
+    <p>What can and cannot be migrated automatically:</p>
+    <div className="matrix-section">
+      <h4>Fully Migratable</h4>
+      <ul>
+        <li>Workspaces & Boards (Core structure)</li>
+        <li>Groups & Items</li>
+        <li>Native Columns (Text, numbers, status, date, people, dropdown, checkbox, timeline)</li>
+        <li>Subitems</li>
+        <li>Docs & Articles</li>
+      </ul>
+    </div>
+    <div className="matrix-section">
+      <h4>Partially Migratable (w/ Caveats)</h4>
+      <ul>
+        <li>Updates / Comments (Author/Timestamp replaced with API user/now)</li>
+        <li>Files / Attachments (Heavy on API quotas)</li>
+        <li>Formula Columns (String copied, but may break if dependencies missing)</li>
+      </ul>
+    </div>
+    <div className="matrix-section">
+      <h4>Manual Only</h4>
+      <ul>
+        <li>Automations / Integration Recipes</li>
+        <li>Dashboards (Cross-board widgets)</li>
+        <li>Permissions & Custom Views</li>
+        <li>User Identity (Exact profile recreation)</li>
+      </ul>
+    </div>
+  </div>
+);
+
 function App() {
   const [sourceApiKey, setSourceApiKey] = useState('');
   const [destApiKey, setDestApiKey] = useState('');
@@ -23,8 +57,14 @@ function App() {
         try {
           const response = await axios.get(`${API_BASE_URL}/jobs/${jobId}/status`);
           setJobStatus(response.data.status);
-        } catch (err: any) {
-          setError(err.message || 'Error polling job status');
+        } catch (err) {
+          if (axios.isAxiosError(err)) {
+            setError(err.response?.data?.detail || err.message || 'Error occurred');
+          } else if (err instanceof Error) {
+            setError(err.message);
+          } else {
+            setError('An unknown error occurred');
+          }
         }
       }, 2000);
     }
@@ -42,24 +82,76 @@ function App() {
     
     try {
       const response = await axios.post(`${API_BASE_URL}/jobs`, {
-        source_api_key: sourceApiKey,
-        dest_api_key: destApiKey
+        source_api_key: sourceApiKey
       });
       setJobId(response.data.job_id);
       setJobStatus(response.data.status);
-    } catch (err: any) {
-      setError(err.message || 'Error starting discovery job');
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail || err.message || 'Error starting discovery job');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error starting discovery job');
+      }
     }
   };
 
   const startMigrationExecution = async () => {
     if (!jobId) return;
+    if (!destApiKey) {
+      setError('Destination API Key is required to execute the migration.');
+      return;
+    }
     setError(null);
     try {
-      const response = await axios.post(`${API_BASE_URL}/jobs/${jobId}/execute`);
+      const response = await axios.post(`${API_BASE_URL}/jobs/${jobId}/execute`, {
+        dest_api_key: destApiKey
+      });
       setJobStatus(response.data.status);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Error starting execution');
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail || err.message || 'Error starting execution');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error starting execution');
+      }
+    }
+  };
+
+  const cancelJob = async () => {
+    if (!jobId) return;
+    try {
+      const response = await axios.post(`${API_BASE_URL}/jobs/${jobId}/cancel`);
+      setJobStatus(response.data.status);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail || err.message || 'Error cancelling job');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error cancelling job');
+      }
+    }
+  };
+
+  const deleteJob = async () => {
+    if (!jobId) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/jobs/${jobId}`);
+      setJobId(null);
+      setJobStatus(null);
+      setSourceApiKey('');
+      setDestApiKey('');
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail || err.message || 'Error deleting job data');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error deleting job data');
+      }
     }
   };
 
@@ -77,8 +169,14 @@ function App() {
       document.body.appendChild(link);
       link.click();
       if(link.parentNode) link.parentNode.removeChild(link);
-    } catch (err: any) {
-       setError(err.message || 'Error downloading report');
+    } catch (err) {
+       if (axios.isAxiosError(err)) {
+         setError(err.response?.data?.detail || err.message || 'Error downloading report');
+       } else if (err instanceof Error) {
+         setError(err.message);
+       } else {
+         setError('Error downloading report');
+       }
     }
   };
 
@@ -90,22 +188,13 @@ function App() {
       {!jobId && (
         <form onSubmit={startDiscovery} className="discovery-form">
           <div className="form-group">
-            <label htmlFor="sourceKey">Source API Key (Read-Only required):</label>
+            <label htmlFor="sourceKey">Source API Key (read-only required):</label>
             <input 
               id="sourceKey"
               type="password" 
               value={sourceApiKey} 
               onChange={(e) => setSourceApiKey(e.target.value)} 
               required
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="destKey">Destination API Key (Write required, for later):</label>
-            <input 
-              id="destKey"
-              type="password" 
-              value={destApiKey} 
-              onChange={(e) => setDestApiKey(e.target.value)} 
             />
           </div>
           <button type="submit" disabled={!sourceApiKey}>Start Discovery Job</button>
@@ -120,46 +209,65 @@ function App() {
           <p>Job ID: {jobId}</p>
           <p>Status: <strong>{jobStatus}</strong></p>
           
-          {(jobStatus === 'PENDING' || jobStatus === 'RUNNING') && (
-            <div className="spinner">Discovery in progress...</div>
-          )}
-
-          {jobStatus === 'EXECUTING' && (
-            <div className="spinner">Migration execution in progress... check GCP logs for real-time Cloud Tasks telemetry.</div>
+          {(jobStatus === 'PENDING' || jobStatus === 'RUNNING' || jobStatus === 'EXECUTING') && (
+            <div className="active-job-actions">
+               {jobStatus === 'EXECUTING' ? (
+                 <div className="spinner">Migration execution in progress... check GCP logs for real-time Cloud Tasks telemetry.</div>
+               ) : (
+                 <div className="spinner">Discovery in progress...</div>
+               )}
+               <button onClick={cancelJob} className="danger-btn">Cancel Job</button>
+            </div>
           )}
 
           {jobStatus === 'COMPLETED' && (
-            <div>
+            <div className="execution-panel">
               <p className="success">Discovery completed successfully!</p>
-              <div className="action-buttons">
-                <button onClick={downloadReport} className="download-btn">
-                  Download Discovery Report
-                </button>
-                <button onClick={startMigrationExecution} className="execute-btn" style={{backgroundColor: '#e63946', color: 'white', marginLeft: '10px'}}>
+              
+              <button onClick={downloadReport} className="download-btn">
+                Download Discovery Report
+              </button>
+
+              <div className="execution-form">
+                <hr />
+                <h3>Ready to Migrate?</h3>
+                <div className="form-group">
+                  <label htmlFor="destKey">Destination API Key (Write required):</label>
+                  <input 
+                    id="destKey"
+                    type="password" 
+                    value={destApiKey} 
+                    onChange={(e) => setDestApiKey(e.target.value)} 
+                    placeholder="Enter your destination API key"
+                  />
+                </div>
+                <button 
+                  onClick={startMigrationExecution} 
+                  className="execute-btn" 
+                  disabled={!destApiKey}
+                >
                   Confirm & Execute Migration
                 </button>
               </div>
-              <button onClick={() => setJobId(null)} className="reset-btn" style={{marginTop: '20px'}}>
-                Start New Job
-              </button>
             </div>
           )}
 
           {jobStatus === 'MIGRATION_COMPLETED' && (
             <div>
               <p className="success">Migration completed successfully!</p>
-              <button onClick={() => setJobId(null)} className="reset-btn">
-                Start New Job
-              </button>
             </div>
           )}
-          
-          {jobStatus === 'FAILED' && (
-             <button onClick={() => setJobId(null)} className="reset-btn">
-                Try Again
-             </button>
+
+          {(jobStatus === 'FAILED' || jobStatus === 'CANCELLED' || jobStatus === 'COMPLETED' || jobStatus === 'MIGRATION_COMPLETED') && (
+             <div className="terminal-actions">
+               <button onClick={deleteJob} className="danger-btn">Delete All Job Data</button>
+             </div>
           )}
         </div>
+      )}
+
+      {(jobStatus === 'RUNNING' || jobStatus === 'COMPLETED') && (
+        <CapabilityMatrix />
       )}
     </div>
   );

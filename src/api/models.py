@@ -3,6 +3,9 @@ from pydantic import BaseModel
 
 class JobCreateRequest(BaseModel):
     source_api_key: str
+
+
+class ExecuteJobRequest(BaseModel):
     dest_api_key: str
 
 

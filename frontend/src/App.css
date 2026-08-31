@@ -97,7 +97,7 @@ button:disabled {
 
 .download-btn {
   background-color: #10b981;
-  margin-right: 1rem;
+  margin-bottom: 1rem;
 }
 
 .download-btn:hover {
@@ -110,4 +110,73 @@ button:disabled {
 
 .reset-btn:hover {
   background-color: #4b5563;
+}
+
+.danger-btn {
+  background-color: #ef4444;
+}
+
+.danger-btn:hover {
+  background-color: #dc2626;
+}
+
+.execute-btn {
+  background-color: #e63946;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.execute-btn:hover {
+  background-color: #d62828;
+}
+
+.execution-form {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.execution-form hr {
+  margin-bottom: 1.5rem;
+  border: 0;
+  border-top: 1px solid #c7d2fe;
+}
+
+.terminal-actions, .active-job-actions {
+  margin-top: 2rem;
+}
+
+.capability-matrix {
+  background: #fff;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 600px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.capability-matrix h3 {
+  margin-top: 0;
+  color: #111827;
+}
+
+.matrix-section {
+  margin-top: 1.5rem;
+}
+
+.matrix-section h4 {
+  margin-bottom: 0.5rem;
+  color: #374151;
+}
+
+.matrix-section ul {
+  margin: 0;
+  padding-left: 1.5rem;
+  color: #4b5563;
+  font-size: 0.95rem;
+}
+
+.matrix-section li {
+  margin-bottom: 0.25rem;
 }

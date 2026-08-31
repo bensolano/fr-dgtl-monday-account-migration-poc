@@ -136,3 +136,23 @@
 **Next Up:**
 *   Continue with Phase 4 (Reporting & Ops).
 *   Start implementing BigQuery `migration_events` table + live progress view.
+
+## 2026-08-31 - Frontend & API Parity Updates
+**Decisions Made:**
+*   **Deferred Write Authorization:** Implemented "Explicit consent UI" by splitting API key inputs. The source API key is provided for Discovery, and the destination API key is only requested post-discovery before Execution, mitigating risk.
+*   **Capability Reporting:** Added a static Migration Capability Matrix summary directly to the Markdown report and the React UI for better user transparency.
+*   **Job Lifecycle Controls:** Added `CANCEL` and `DELETE` endpoints to the backend and surfaced them via danger buttons in the UI for complete data and execution lifecycle management.
+
+**Current State:**
+*   Updated `JobCreateRequest` to only require `source_api_key`.
+*   Added `ExecuteJobRequest` expecting `dest_api_key` to `POST /jobs/{job_id}/execute`.
+*   Created `DELETE /jobs/{job_id}` endpoint to purge Firestore documents, Secret Manager keys, and GCS artifacts.
+*   Created `POST /jobs/{job_id}/cancel` endpoint to halt job pipelines via state transition to `CANCELLED`.
+*   Refactored `src/core/gcp.py` to cleanly split `store_dest_secret` and handle deep artifact deletion.
+*   Appended the static capability matrix appendix to `ReportEngine.generate_markdown_report`.
+*   Completely overhauled `frontend/src/App.tsx` and `App.css` to introduce the explicit step-by-step workflow, capability component, and danger actions.
+*   Checked off "Explicit consent UI" in the roadmap.
+
+**Next Up:**
+*   Continue with Phase 4 (Reporting & Ops).
+

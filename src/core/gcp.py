@@ -30,9 +30,7 @@ class GCPClients:
 gcp_clients = GCPClients()
 
 
-def store_job_secrets(
-    job_id: str, source_api_key: str, dest_api_key: str | None = None
-) -> None:
+def store_job_secrets(job_id: str, source_api_key: str) -> None:
     if not gcp_clients.secret_client:
         return
 
@@ -54,22 +52,64 @@ def store_job_secrets(
         }
     )
 
-    # Destination key if provided
-    if dest_api_key:
-        dest_secret_id = f"job-{job_id}-dest-key"
-        gcp_clients.secret_client.create_secret(
-            request={
-                "parent": parent,
-                "secret_id": dest_secret_id,
-                "secret": {"replication": {"automatic": {}}},
-            }
-        )
-        gcp_clients.secret_client.add_secret_version(
-            request={
-                "parent": f"{parent}/secrets/{dest_secret_id}",
-                "payload": {"data": dest_api_key.encode("UTF-8")},
-            }
-        )
+
+def store_dest_secret(job_id: str, dest_api_key: str) -> None:
+    if not gcp_clients.secret_client:
+        return
+
+    parent = f"projects/{PROJECT_ID}"
+    dest_secret_id = f"job-{job_id}-dest-key"
+    gcp_clients.secret_client.create_secret(
+        request={
+            "parent": parent,
+            "secret_id": dest_secret_id,
+            "secret": {"replication": {"automatic": {}}},
+        }
+    )
+    gcp_clients.secret_client.add_secret_version(
+        request={
+            "parent": f"{parent}/secrets/{dest_secret_id}",
+            "payload": {"data": dest_api_key.encode("UTF-8")},
+        }
+    )
+
+
+def delete_job_secrets(job_id: str) -> None:
+    if not gcp_clients.secret_client:
+        return
+
+    parent = f"projects/{PROJECT_ID}"
+    for suffix in ["source-key", "dest-key"]:
+        secret_name = f"{parent}/secrets/job-{job_id}-{suffix}"
+        try:
+            gcp_clients.secret_client.delete_secret(request={"name": secret_name})
+            logger.info(f"Deleted secret {secret_name}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to delete secret {secret_name}: {e}")
+
+
+def delete_gcs_artifacts(job_id: str) -> None:
+    if not gcp_clients.storage_client:
+        return
+
+    bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
+    blobs = bucket.list_blobs(prefix=f"reports/{job_id}/")
+    for blob in blobs:
+        try:
+            blob.delete()
+            logger.info(f"Deleted GCS artifact {blob.name}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to delete GCS artifact {blob.name}: {e}")
+
+    # Also delete dag storage if they use a separate prefix like dags/{job_id}
+    # It might be in the same bucket.
+    blobs = bucket.list_blobs(prefix=f"dags/{job_id}/")
+    for blob in blobs:
+        try:
+            blob.delete()
+            logger.info(f"Deleted GCS artifact {blob.name}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to delete GCS artifact {blob.name}: {e}")
 
 
 def get_dest_api_key(job_id: str) -> str:
