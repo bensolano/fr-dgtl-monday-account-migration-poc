@@ -68,10 +68,12 @@ steps:
       - "$_REGION"
       - "--service-account"
       - "migration-job-sa@$PROJECT_ID.iam.gserviceaccount.com"
-      - '--set-env-vars'
-      - 'PROJECT_ID=$PROJECT_ID,REPORTS_BUCKET=$PROJECT_ID-migration-reports'
-      - '--command='
-      - '--args='
+      - "--set-env-vars"
+      - 'PROJECT_ID=$PROJECT_ID,REPORTS_BUCKET=$PROJECT_ID-migration-reports"
+      - "--task-timeout"
+      - '120m"
+      - "--command=""
+      - "--args=""
 
       # 8. Deploy API Service to Cloud Run
   # Notice the --service-account flag linking the API to the Terraform-created SA
