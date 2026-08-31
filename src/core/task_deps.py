@@ -33,8 +33,22 @@ class GCSDagStorage:
             project_id (str): The GCP project ID.
             bucket_name (str): The GCS bucket name for storing reports and DAGs.
         """
-        self.client = storage.Client(project=project_id)
-        self.bucket = self.client.bucket(bucket_name)
+        self.project_id = project_id
+        self.bucket_name = bucket_name
+        self._client = None
+        self._bucket = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = storage.Client(project=self.project_id)
+        return self._client
+
+    @property
+    def bucket(self):
+        if self._bucket is None:
+            self._bucket = self.client.bucket(self.bucket_name)
+        return self._bucket
 
     def save_dag(self, job_id: str, dag: MigrationDag) -> None:
         """
@@ -86,7 +100,13 @@ class CloudTaskQueue:
         self.project_id = project_id
         self.region = region
         self.service_url = service_url
-        self.client = tasks_v2.CloudTasksClient() if tasks_v2 else None
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None and tasks_v2:
+            self._client = tasks_v2.CloudTasksClient()
+        return self._client
 
     def enqueue_task(
         self,
