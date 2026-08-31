@@ -149,6 +149,7 @@
 *   Refactored `StateManager` in `src/core/state.py` to instantiate `firestore.Client` lazily to avoid socket duplication upon FastAPI injection.
 *   Refactored `GCSDagStorage` and `CloudTaskQueue` in `src/core/task_deps.py` to instantiate `storage.Client` and `tasks_v2.CloudTasksClient` lazily, preventing per-request gRPC connection overhead.
 *   Fixed a `ValidationError` in `job_engine.py` by ensuring `set_job_status("PENDING")` writes the fully valid `JobDocument` schema (with placeholder accounts) to Firestore on initialization.
+*   Fixed a 404 error during local development when retrieving the report by implementing a fallback to `/tmp/{job_id}_report.md` in the `/api/v1/jobs/{job_id}/report` route when GCS paths are missing or unreachable.
 *   Updated unit tests (`test_state.py`) to correctly trigger and test the new lazy evaluation properties.
 
 **Next Up:**

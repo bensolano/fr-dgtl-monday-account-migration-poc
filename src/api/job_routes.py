@@ -14,6 +14,7 @@ from src.api.models import (
     JobStatusResponse,
 )
 from src.core import gcp
+from src.core.config import settings
 from src.engines.job_engine import JobEngine
 from src.engines.orchestration_engine import OrchestrationEngine
 
@@ -56,14 +57,20 @@ async def create_job(
     job_engine.set_job_status(job_id, "PENDING")
 
     try:
-        # Try to trigger PRODUCTION GCP Cloud Run Job
-        triggered = gcp.trigger_cloud_run_discovery_job(job_id)
-        if triggered:
-            msg = "Cloud Run job triggered."
-        else:
-            # Fallback to local background task if env vars missing
+        if settings.is_local:
+            logger.info(
+                "Running locally. Bypassing Cloud Run Job and using BackgroundTasks."
+            )
             background_tasks.add_task(job_engine.execute_discovery_job, job_id)
             msg = "Local background task started."
+        else:
+            triggered = gcp.trigger_cloud_run_discovery_job(job_id)
+            if triggered:
+                msg = "Cloud Run job triggered."
+            else:
+                # Fallback to local background task if env vars missing in production
+                background_tasks.add_task(job_engine.execute_discovery_job, job_id)
+                msg = "Local background task started as fallback."
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to trigger Cloud Run Job for {job_id}: {e}")
         job_engine.set_job_status(
@@ -185,7 +192,25 @@ async def get_job_report(
         raise HTTPException(status_code=400, detail="Report not ready or job failed")
 
     report_gcs_path = job_data.get("report_path")
+
+    # Fallback to local file if it exists (for local development without GCS)
     if not report_gcs_path:
+        import os
+
+        from src.core.config import settings
+
+        if settings.is_local:
+            local_report_path = f"/tmp/{job_id}_report.md"
+            if os.path.exists(local_report_path):
+                from fastapi.responses import FileResponse
+
+                return FileResponse(
+                    path=local_report_path,
+                    media_type="text/markdown",
+                    headers={
+                        "Content-Disposition": f'attachment; filename="report_{job_id}.md"'
+                    },
+                )
         raise HTTPException(status_code=404, detail="Report file not found")
 
     try:
@@ -211,6 +236,22 @@ async def get_job_report(
             )
     except Exception as e:
         logger.error(f"Failed to retrieve report: {e}")
+        import os
+
+        from src.core.config import settings
+
+        if settings.is_local:
+            local_report_path = f"/tmp/{job_id}_report.md"
+            if os.path.exists(local_report_path):
+                from fastapi.responses import FileResponse
+
+                return FileResponse(
+                    path=local_report_path,
+                    media_type="text/markdown",
+                    headers={
+                        "Content-Disposition": f'attachment; filename="report_{job_id}.md"'
+                    },
+                )
         raise HTTPException(
             status_code=500, detail="Failed to retrieve report from storage"
         ) from e

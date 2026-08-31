@@ -10,6 +10,11 @@ from src.api.worker_routes import worker_router
 from src.core.config import settings
 from src.core.local_queue import local_worker_loop
 
+# Configure root logger to output INFO logs
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
