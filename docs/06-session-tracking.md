@@ -153,6 +153,18 @@
 *   Completely overhauled `frontend/src/App.tsx` and `App.css` to introduce the explicit step-by-step workflow, capability component, and danger actions.
 *   Checked off "Explicit consent UI" in the roadmap.
 
+## 2026-08-31 - gRPC Lazy Loading & Local DX Fixes
+**Decisions Made:**
+*   **Lazy GCP Client Initialization:** Enforced the Lazy Initialization pattern (using `@property` accessors) for all Google Cloud SDK clients (`firestore.Client`, `storage.Client`, `SecretManagerServiceClient`, and `CloudTasksClient`) across the core engines to fix aggressive file descriptor (FD) leaks and gRPC multi-processing warnings when running under `uvicorn` and FastAPI's `BackgroundTasks`.
+
+**Current State:**
+*   Refactored `GCPClients` singleton in `src/core/gcp.py` to instantiate clients lazily.
+*   Refactored `JobEngine` in `src/engines/job_engine.py` to use `@property` accessors for `db`, `storage_client`, and `secret_client`.
+*   Refactored `StateManager` in `src/core/state.py` to instantiate `firestore.Client` lazily to avoid socket duplication upon FastAPI injection.
+*   Refactored `GCSDagStorage` and `CloudTaskQueue` in `src/core/task_deps.py` to instantiate `storage.Client` and `tasks_v2.CloudTasksClient` lazily, preventing per-request gRPC connection overhead.
+*   Fixed a `ValidationError` in `job_engine.py` by ensuring `set_job_status("PENDING")` writes the fully valid `JobDocument` schema (with placeholder accounts) to Firestore on initialization.
+*   Updated unit tests (`test_state.py`) to correctly trigger and test the new lazy evaluation properties.
+
 **Next Up:**
 *   Continue with Phase 4 (Reporting & Ops).
 
