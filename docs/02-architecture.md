@@ -94,9 +94,10 @@ graph TD
    a rate governed by queue config (`max_dispatches_per_second`,
    `max_concurrent_dispatches`) *and* an in-handler token bucket that
    tracks the destination account's live complexity budget (read from
-   each response's `complexity` block). On `ComplexityException` (HTTP 429), the
-   handler relies on Cloud Tasks' native queue configuration (exponential backoff)
-   for retries.
+   each response's `complexity` block). On `ComplexityException` (budget exhaustion), the
+   handler uses the Re-enqueue Pattern, calculating the exact reset time and pushing the task 
+   back into the queue with a future `schedule_time`, then immediately returning a `200 OK` 
+   to free the container.
 8. **Idempotency** — Before each create-mutation, the handler checks
    Firestore for an existing `source_id → dest_id` mapping; if present,
    skip (already done). This makes retries and job resumption safe.
