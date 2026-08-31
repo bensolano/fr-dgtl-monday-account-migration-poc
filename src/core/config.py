@@ -9,9 +9,9 @@ class Settings(BaseSettings):
 
     PROJECT_ID: str = "sandbox-bsolano"
     REGION: str = "europe-west1"
-    REPORTS_BUCKET: str = "local-dev-reports-bucket"
+    REPORTS_BUCKET: str = "sandbox-bsolano-migration-reports"
     DISCOVERY_JOB_NAME: str = "migration-discovery-job"
-    SERVICE_URL: str = "https://example.com"
+    SERVICE_URL: str = "http://localhost:8000"
     K_SERVICE: str = ""  # Populated by Cloud Run automatically
 
     model_config = SettingsConfigDict(

@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
+from src.api.dependencies import get_job_engine, get_orchestration
 from src.api.models import (
     ExecuteJobRequest,
     ExecuteJobResponse,
@@ -13,67 +14,12 @@ from src.api.models import (
     JobStatusResponse,
 )
 from src.core import gcp
-from src.core.monday_client import MondayClient
-from src.core.rate_limit import TokenBucketRateLimiter
-from src.core.state import StateManager
-from src.core.task_deps import GCSDagStorage, get_task_queue
-from src.engines.classification_engine import ClassificationEngine
-from src.engines.discovery_engine import DiscoveryEngine
 from src.engines.job_engine import JobEngine
 from src.engines.orchestration_engine import OrchestrationEngine
-from src.engines.report_engine import ReportEngine
 
 logger = logging.getLogger(__name__)
 
 job_router = APIRouter()
-
-# ==============================================================================
-# EDUCATIONAL NOTE: THE COMPOSITION ROOT (DEPENDENCY PROVIDER)
-# ==============================================================================
-# In a pure SOLID architecture, the business logic (JobEngine) knows NOTHING
-# about concrete implementations.
-#
-# So, *someone* has to wire the concrete classes together. That is the job of the
-# "Composition Root" — usually the outermost layer of the application (the Router).
-#
-# Here, FastAPI acts as our Composition Root. When a route asks for a `JobEngine`,
-# FastAPI calls `get_job_engine()`, which instantiates the concrete classes and
-# passes them to the engine.
-# ==============================================================================
-
-
-def default_discovery_factory(api_key: str) -> DiscoveryEngine:
-    """Factory function to build a DiscoveryEngine with a dynamic API key."""
-    client = MondayClient(api_key=api_key)
-    return DiscoveryEngine(client=client)
-
-
-def get_state_manager() -> StateManager:
-    """Dependency provider for StateManager with injected rate limiter."""
-    return StateManager(rate_limiter=TokenBucketRateLimiter())
-
-
-def get_job_engine(
-    state_manager: Annotated[StateManager, Depends(get_state_manager)],
-) -> JobEngine:
-    """Dependency provider that wires concrete engines into JobEngine."""
-    return JobEngine(
-        classifier=ClassificationEngine(),
-        reporter=ReportEngine(),
-        state_manager=state_manager,
-        discovery_factory=default_discovery_factory,
-    )
-
-
-def get_orchestration(
-    state_manager: Annotated[StateManager, Depends(get_state_manager)],
-) -> OrchestrationEngine:
-    """Dependency provider that wires infrastructure into OrchestrationEngine."""
-    return OrchestrationEngine(
-        state_manager=state_manager,
-        dag_storage=GCSDagStorage(),
-        task_queue=get_task_queue(),
-    )
 
 
 @job_router.post("", response_model=JobCreateResponse)
@@ -152,9 +98,6 @@ async def get_job_status(
     """
     job_data = job_engine.get_job(job_id)
     if not job_data:
-        # Fallback logic for local testing without firestore
-        if not job_engine.has_firestore():
-            return JobStatusResponse(job_id=job_id, status="PENDING")
         raise HTTPException(status_code=404, detail="Job not found")
 
     return JobStatusResponse(job_id=job_id, status=job_data.get("status", "UNKNOWN"))

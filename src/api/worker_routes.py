@@ -3,36 +3,19 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 
+from src.api.dependencies import get_orchestration, get_state_manager
 from src.api.models import TaskResponse
 from src.core import gcp, time_utils
 from src.core.exceptions import MondayRateLimitError
 from src.core.monday_client import MondayClient
-from src.core.rate_limit import TokenBucketRateLimiter
 from src.core.schemas import WorkerTaskRequest
 from src.core.state import StateManager
-from src.core.task_deps import GCSDagStorage, get_task_queue
 from src.engines.execution_engine import ExecutionEngine
 from src.engines.orchestration_engine import OrchestrationEngine
 
 logger = logging.getLogger(__name__)
 
 worker_router = APIRouter()
-
-
-def get_state_manager() -> StateManager:
-    """Dependency provider for StateManager with injected rate limiter."""
-    return StateManager(rate_limiter=TokenBucketRateLimiter())
-
-
-def get_orchestration(
-    state_manager: Annotated[StateManager, Depends(get_state_manager)],
-) -> OrchestrationEngine:
-    """Dependency provider that wires infrastructure into OrchestrationEngine."""
-    return OrchestrationEngine(
-        state_manager=state_manager,
-        dag_storage=GCSDagStorage(),
-        task_queue=get_task_queue(),
-    )
 
 
 def estimate_complexity(entity_type: str, payload: dict[str, Any]) -> int:

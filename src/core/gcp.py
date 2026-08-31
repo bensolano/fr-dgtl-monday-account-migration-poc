@@ -54,6 +54,17 @@ gcp_clients = GCPClients()
 
 def store_job_secrets(job_id: str, source_api_key: str) -> None:
     if not gcp_clients.secret_client:
+        logger.warning(
+            f"Secret Manager not available. Storing source secret for job {job_id} in memory."
+        )
+        from src.api.dependencies import get_state_manager
+
+        state_manager = get_state_manager()
+        if not hasattr(state_manager, "_local_memory_secrets"):
+            state_manager._local_memory_secrets = {}
+        if job_id not in state_manager._local_memory_secrets:
+            state_manager._local_memory_secrets[job_id] = {}
+        state_manager._local_memory_secrets[job_id]["source_key"] = source_api_key
         return
 
     parent = f"projects/{PROJECT_ID}"
@@ -77,6 +88,17 @@ def store_job_secrets(job_id: str, source_api_key: str) -> None:
 
 def store_dest_secret(job_id: str, dest_api_key: str) -> None:
     if not gcp_clients.secret_client:
+        logger.warning(
+            f"Secret Manager not available. Storing dest secret for job {job_id} in memory."
+        )
+        from src.api.dependencies import get_state_manager
+
+        state_manager = get_state_manager()
+        if not hasattr(state_manager, "_local_memory_secrets"):
+            state_manager._local_memory_secrets = {}
+        if job_id not in state_manager._local_memory_secrets:
+            state_manager._local_memory_secrets[job_id] = {}
+        state_manager._local_memory_secrets[job_id]["dest_key"] = dest_api_key
         return
 
     parent = f"projects/{PROJECT_ID}"
@@ -136,7 +158,22 @@ def delete_gcs_artifacts(job_id: str) -> None:
 
 def get_dest_api_key(job_id: str) -> str:
     if not gcp_clients.secret_client:
-        raise RuntimeError("Secret Manager client not configured.")
+        logger.warning(
+            f"Secret Manager not available. Retrieving dest secret for job {job_id} from memory."
+        )
+        from src.api.dependencies import get_state_manager
+
+        state_manager = get_state_manager()
+        if (
+            hasattr(state_manager, "_local_memory_secrets")
+            and job_id in state_manager._local_memory_secrets
+        ):
+            dest_key = state_manager._local_memory_secrets[job_id].get("dest_key")
+            if dest_key:
+                return dest_key
+        raise RuntimeError(
+            "Secret Manager client not configured and secret not in local memory."
+        )
 
     name = f"projects/{PROJECT_ID}/secrets/job-{job_id}-dest-key/versions/latest"
     response = gcp_clients.secret_client.access_secret_version(request={"name": name})

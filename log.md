@@ -22,12 +22,18 @@
 - Study and plan implem of re-enqueue pattern for tasks
 - Study and plan implem of local pattern to replace cloud tasks
 
+### 31.08
+
+- Implement re-enqueue system for tasks using token bucket
+- Implement local asyncio queue for local task dispatch
+- Add dead-letter queue
+- Add cancel job and delete all job data button in UI
+- Add static info section in report and UI containing concise version of the migration capabilit matrix
+- Implement pydantic BaseSettings for env vars, add env vars to docs
+
+
 TODO:
 - Test migration phase
-- Add cancel job button in UI for pending jobs
+- Document tests and remove bloat
+- Move from background tasks locally to container-centered approach reproducing production env architecture
 - Add estimated discovery time in UI
-- Add static info section in report containing concise version of the migration capabilit matrix
-- Implement pydantic BaseSettings for env vars, add env vars to docs
-- Add delete button by job_id
-- Use re-enqueue system for tasks using token bucket
-- 
