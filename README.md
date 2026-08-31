@@ -34,6 +34,22 @@ We provide a single script to spin up the entire application locally for testing
     gcloud auth application-default login
     ```
 
+### Environment Variables & Configuration
+
+The backend relies on the following environment variables. In Cloud Run, these are injected automatically via our CI/CD pipeline (Cloud Build) and Terraform configuration. For local development, copy the provided example file:
+
+```bash
+cp .env.example .env
+```
+
+**Variables:**
+*   `PROJECT_ID`: The Google Cloud Project ID (e.g., `sandbox-bsolano`).
+*   `REGION`: The GCP region (e.g., `europe-west1`).
+*   `REPORTS_BUCKET`: The GCS bucket name for storing generated reports.
+*   `DISCOVERY_JOB_NAME`: The Cloud Run Job name used to spawn background discovery workers.
+*   `SERVICE_URL`: The URL of the FastAPI service, used when spawning background Cloud Tasks.
+*   `K_SERVICE`: Provided automatically by Cloud Run. When absent, the application defaults to "local execution mode" (e.g., bypassing GCP Tasks in favor of asyncio).
+
 ### Starting the App
 Run the following script from the root directory:
 ```bash

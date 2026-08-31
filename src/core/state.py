@@ -1,15 +1,15 @@
 import datetime
 import logging
-import os
 
 from google.cloud import firestore
 
+from src.core.config import settings
 from src.core.schemas import DeadLetterDocument, JobDocument, MigrationDag, TaskPayload
 from src.engines.interfaces import TokenBucketInterface
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
+PROJECT_ID = settings.PROJECT_ID
 
 
 class StateManager:

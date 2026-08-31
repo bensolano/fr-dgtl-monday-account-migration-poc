@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.job_routes import job_router
 from src.api.worker_routes import worker_router
+from src.core.config import settings
 from src.core.local_queue import local_worker_loop
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Determine if we are running locally based on absence of K_SERVICE (Cloud Run env var)
-    is_local = "K_SERVICE" not in os.environ
+    is_local = settings.is_local
 
     worker_tasks = []
     if is_local:

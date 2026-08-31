@@ -1,12 +1,12 @@
 import datetime
 import json
 import logging
-import os
 from collections.abc import Callable
 from typing import Any
 
 from google.cloud import firestore, secretmanager, storage
 
+from src.core.config import settings
 from src.engines.interfaces import (
     ClassifierInterface,
     DiscovererInterface,
@@ -72,12 +72,8 @@ class JobEngine:
         self.discovery_factory = discovery_factory
         self.state_manager = state_manager
 
-        self.project_id = project_id or os.environ.get(
-            "PROJECT_ID", "local-dev-project"
-        )
-        self.reports_bucket = reports_bucket or os.environ.get(
-            "REPORTS_BUCKET", "local-dev-reports-bucket"
-        )
+        self.project_id = project_id or settings.PROJECT_ID
+        self.reports_bucket = reports_bucket or settings.REPORTS_BUCKET
 
         # Lazy load clients to prevent multiprocessing/forking issues
         self._db = None

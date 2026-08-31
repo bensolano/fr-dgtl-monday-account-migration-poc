@@ -1,7 +1,7 @@
 import logging
-import os
 from typing import Any
 
+from src.core.config import settings
 from src.core.schemas import MigrationDag, TaskPayload
 
 try:
@@ -11,10 +11,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
-REGION = os.environ.get("REGION", "europe-west1")
+PROJECT_ID = settings.PROJECT_ID
+REGION = settings.REGION
 # For local dev, we might mock this or skip.
-SERVICE_URL = os.environ.get("SERVICE_URL", "https://example.com")
+SERVICE_URL = settings.SERVICE_URL
 
 
 from src.engines.interfaces import StateInterface, StorageInterface, TaskQueueInterface

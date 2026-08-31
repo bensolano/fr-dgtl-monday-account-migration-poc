@@ -5,15 +5,12 @@ echo "=================================================="
 echo " Starting Monday.com Migration POC Locally        "
 echo "=================================================="
 
-# Provide default mock values for local development if they aren't already set.
-# In a deployed environment, these are injected automatically by Cloud Run
-# based on our Terraform configuration (see terraform/main.tf).
-export PROJECT_ID="${PROJECT_ID:-sandbox-bsolano}"
-export REPORTS_BUCKET="${REPORTS_BUCKET:-sandbox-bsolano-migration-reports}"
+if [ ! -f ".env" ]; then
+    echo "Warning: .env file not found. Copying .env.example to .env..."
+    cp .env.example .env
+fi
 
-echo "Environment Variables (Simulating Cloud Run env):"
-echo "  PROJECT_ID     = $PROJECT_ID"
-echo "  REPORTS_BUCKET = $REPORTS_BUCKET"
+echo "Make sure your .env file is configured correctly."
 echo ""
 echo "Note: If you want to interact with actual GCP services (Firestore, GCS),"
 echo "ensure you have run 'gcloud auth application-default login'."

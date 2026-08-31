@@ -1,9 +1,9 @@
 import json
 import logging
-import os
 
 from google.cloud import storage
 
+from src.core.config import settings
 from src.core.local_queue import LocalTaskQueue
 from src.core.schemas import MigrationDag, TaskPayload
 
@@ -16,10 +16,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ID = os.environ.get("PROJECT_ID", "local-dev-project")
-REGION = os.environ.get("REGION", "europe-west1")
-SERVICE_URL = os.environ.get("SERVICE_URL", "https://example.com")
-REPORTS_BUCKET = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
+PROJECT_ID = settings.PROJECT_ID
+REGION = settings.REGION
+SERVICE_URL = settings.SERVICE_URL
+REPORTS_BUCKET = settings.REPORTS_BUCKET
 
 
 class GCSDagStorage:
@@ -160,7 +160,6 @@ def get_task_queue():
     Returns:
         LocalTaskQueue | CloudTaskQueue: The task queue client depending on the environment.
     """
-    is_local = "K_SERVICE" not in os.environ
-    if is_local:
+    if settings.is_local:
         return LocalTaskQueue()
     return CloudTaskQueue()

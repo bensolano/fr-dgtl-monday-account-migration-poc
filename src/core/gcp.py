@@ -1,17 +1,18 @@
 import datetime
 import json
 import logging
-import os
 from typing import Any
 
 from google.cloud import run_v2, secretmanager, storage
 
+from src.core.config import settings
+
 logger = logging.getLogger(__name__)
 
-PROJECT_ID = os.environ.get("PROJECT_ID", "sandbox-bsolano")
-REGION = os.environ.get("REGION", "europe-west1")
-REPORTS_BUCKET = os.environ.get("REPORTS_BUCKET", "local-dev-reports-bucket")
-DISCOVERY_JOB_NAME = os.environ.get("DISCOVERY_JOB_NAME")
+PROJECT_ID = settings.PROJECT_ID
+REGION = settings.REGION
+REPORTS_BUCKET = settings.REPORTS_BUCKET
+DISCOVERY_JOB_NAME = settings.DISCOVERY_JOB_NAME
 
 
 class GCPClients:
