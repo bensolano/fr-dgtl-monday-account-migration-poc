@@ -109,23 +109,25 @@ class StateManager:
             }
         )
 
-    def consume_budget(self, job_id: str, required_tokens: int = 50000) -> bool:
+    def consume_budget(
+        self, job_id: str, required_tokens: int = 50000
+    ) -> tuple[bool, int]:
         """
         Proactively checks if the global token bucket has enough tokens.
-        If sufficient, deducts them transactionally and returns True.
-        If insufficient, returns False, signaling the worker to yield.
+        If sufficient, deducts them transactionally and returns (True, 0).
+        If insufficient, returns (False, seconds_until_reset), signaling the worker to yield.
 
         Args:
             job_id: The job context.
             required_tokens: Expected complexity of the next operation.
 
         Returns:
-            bool: True if safe to proceed, False to rate limit.
+            tuple[bool, int]: (True, 0) if safe to proceed, (False, seconds_until_reset) if rate limited.
         """
         import datetime
 
         if not self.db:
-            return True  # Allow pass-through for local dev without Firestore
+            return True, 0  # Allow pass-through for local dev without Firestore
 
         bucket_ref = (
             self.db.collection("jobs")
@@ -155,9 +157,10 @@ class StateManager:
                         last_reset = last_reset_val
 
                 # If more than 60 seconds have passed since last reset, refill the bucket
-                if (
+                elapsed = (
                     datetime.datetime.now(datetime.UTC) - last_reset
-                ).total_seconds() > 60:
+                ).total_seconds()
+                if elapsed > 60:
                     current_tokens = 5000000
                     last_reset = datetime.datetime.now(datetime.UTC)
 
@@ -170,10 +173,14 @@ class StateManager:
                         "last_reset": last_reset,
                     },
                 )
-                return True
+                return True, 0
             else:
-                # Reject
-                return False
+                # Reject, calculate how many seconds until the 60s window expires
+                elapsed = (
+                    datetime.datetime.now(datetime.UTC) - last_reset
+                ).total_seconds()
+                retry_in = max(1, int(60 - elapsed))
+                return False, retry_in
 
         return update_in_transaction(self.db.transaction(), bucket_ref)
 

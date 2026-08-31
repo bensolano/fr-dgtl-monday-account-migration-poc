@@ -111,3 +111,21 @@
 *   **Refactor Rate Limiting:** Implement the Re-enqueue Pattern in `worker_routes.py` and `StateManager` to dynamically reschedule Cloud Tasks based on exact rate limit reset times instead of returning HTTP 429s.
 *   **Local Execution Fallback:** Implement a bounded `asyncio.Queue` worker pool tied to the FastAPI lifecycle to simulate Cloud Tasks execution locally without requiring external GCP queueing infrastructure.
 *   Continue with Phase 4 (Reporting & Ops).
+
+## 2026-08-31 - Rate Limiting & Local Execution Refactor
+**Decisions Made:**
+*   **Rate Limiting:** Adopted the Re-enqueue Pattern for rate limit mitigation. Instead of throwing HTTP 429s which rely on generic Cloud Tasks backoff, workers now return `200 OK` but explicitly re-enqueue tasks with a `schedule_time` offset by the exact exact rate limit `retry_in` seconds, preserving budget efficiency and tight schedules.
+*   **Local Simulation:** Bypassed the need for live GCP Cloud Tasks by injecting a lightweight, FastAPI-lifespan-tied `LocalTaskQueue`. Background loops intercept task messages in `asyncio.Queue` and send local HTTP POST requests, natively mimicking Cloud Tasks webhooks and providing a complete offline testing cycle.
+
+**Current State:**
+*   Updated `CloudTaskQueue.enqueue_task` in `src/core/task_deps.py` to accept `schedule_time` (converting it into `timestamp_pb2` payload).
+*   Implemented `LocalTaskQueue` and `local_worker_loop` in `src/core/task_deps.py` backed by `asyncio.Queue` and `httpx`.
+*   Tied the `local_worker_loop` to the FastAPI application startup via `@asynccontextmanager` lifespan in `src/api/main.py`.
+*   Added `get_task_queue()` factory to `src/core/task_deps.py` and modified `worker_routes.py` and `job_routes.py` dependency providers to use it dynamically based on the `K_SERVICE` environment variable.
+*   Updated `StateManager.consume_budget()` in `src/core/state.py` to return a tuple `(bool, int)` supplying the exact `retry_in` delay in seconds when a budget check fails.
+*   Modified the `handle_task` endpoint in `worker_routes.py` to catch `MondayRateLimitError` and budget-exhaustion states by computing a future `schedule_time`, re-enqueueing the task via `orchestration.task_queue.enqueue_task`, and returning a 200 `skipped` response.
+*   Updated `docs/03-implementation-roadmap.md` to check off Phase 3 retry policy constraints since exact re-enqueue delays are fully implemented. 
+
+**Next Up:**
+*   Continue with Phase 4 (Reporting & Ops).
+*   Start implementing BigQuery `migration_events` table + live progress view.

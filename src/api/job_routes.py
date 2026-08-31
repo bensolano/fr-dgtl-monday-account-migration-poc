@@ -14,7 +14,7 @@ from src.api.models import (
 from src.core import gcp
 from src.core.monday_client import MondayClient
 from src.core.state import StateManager
-from src.core.task_deps import CloudTaskQueue, GCSDagStorage
+from src.core.task_deps import GCSDagStorage, get_task_queue
 from src.engines.classification_engine import ClassificationEngine
 from src.engines.discovery_engine import DiscoveryEngine
 from src.engines.job_engine import JobEngine
@@ -60,7 +60,7 @@ def get_orchestration() -> OrchestrationEngine:
     return OrchestrationEngine(
         state_manager=StateManager(),
         dag_storage=GCSDagStorage(),
-        task_queue=CloudTaskQueue(),
+        task_queue=get_task_queue(),
     )
 
 

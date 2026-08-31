@@ -77,13 +77,13 @@ After reviewing the Markdown report, the user consents to write data to the dest
 *   **GCP Services:**
     *   **Cloud Storage:** Uploads `dag.json` (via `GCSDagStorage`) so distributed workers can retrieve the blueprint later.
     *   **Firestore:** Calls `StateManager.initialize_dag_state()` (via `StateInterface`). Creates a `dag_state/{stage}` counter for every stage (e.g., `boards: {total_tasks: 50, completed: 0}`).
-    *   **Cloud Tasks:** Dispatches only the *first* stage (`workspaces`) to the `migration-workspaces` queue via `_enqueue_stage()` (via `CloudTaskQueue`).
+    *   **Cloud Tasks:** Dispatches only the *first* stage (`workspaces`) to the `migration-workspaces` queue via `_enqueue_stage()` (via `get_task_queue()` factory resolving to `CloudTaskQueue` or `LocalTaskQueue`).
 
 ### Step 10: Task Handling & Proactive Rate Limiting
 *   **Endpoint:** `POST /api/v1/worker/{stage}` (`src/api/worker_routes.py -> handle_task`)
 *   **GCP Services:**
     *   **Firestore (Idempotency):** Calls `StateManager.get_dest_id()`. If a mapping exists, the worker skips execution.
-    *   **Firestore (Token Bucket):** Calls `StateManager.consume_budget()`. Transactionally deducts estimated complexity from `state/complexity_bucket`. If empty, returns HTTP 429 to **Cloud Tasks** for native backoff.
+    *   **Firestore (Token Bucket):** Calls `StateManager.consume_budget()`. Transactionally deducts estimated complexity from `state/complexity_bucket`. If empty, it computes the exact `retry_in` reset delay, re-enqueues the task with a future `schedule_time`, and returns a `200 OK` (Re-enqueue Pattern) to avoid blind exponential backoff.
 
 ### Step 11: GraphQL Mutations & Reactive Sync
 *   **Class:** `ExecutionEngine`

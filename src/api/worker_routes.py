@@ -9,7 +9,7 @@ from src.core.exceptions import MondayRateLimitError
 from src.core.monday_client import MondayClient
 from src.core.schemas import WorkerTaskRequest
 from src.core.state import StateManager
-from src.core.task_deps import CloudTaskQueue, GCSDagStorage
+from src.core.task_deps import GCSDagStorage, get_task_queue
 from src.engines.execution_engine import ExecutionEngine
 from src.engines.orchestration_engine import OrchestrationEngine
 
@@ -23,7 +23,7 @@ def get_orchestration() -> OrchestrationEngine:
     return OrchestrationEngine(
         state_manager=StateManager(),
         dag_storage=GCSDagStorage(),
-        task_queue=CloudTaskQueue(),
+        task_queue=get_task_queue(),
     )
 
 
@@ -100,14 +100,18 @@ async def handle_task(
 
     # 2. Proactive Rate Limiting (Token Bucket)
     estimated_cost = estimate_complexity(entity_type, entity_payload)
-    if not state_manager.consume_budget(job_id, estimated_cost):
+    is_safe, retry_in = state_manager.consume_budget(job_id, estimated_cost)
+    if not is_safe:
         logger.warning(
-            f"Insufficient complexity budget ({estimated_cost} required) for {entity_type}. Yielding 429 to Cloud Tasks."
+            f"Insufficient complexity budget ({estimated_cost} required) for {entity_type}. Re-enqueueing in {retry_in}s."
         )
-        # Return HTTP 429 to tell Cloud Tasks to back off and requeue natively
-        raise HTTPException(
-            status_code=429, detail="Complexity budget exhausted. Requeueing."
+        import time
+
+        schedule_time = time.time() + retry_in
+        orchestration.task_queue.enqueue_task(
+            job_id, stage, task, schedule_time=schedule_time
         )
+        return TaskResponse(status="skipped", reason="rate_limited_requeued")
 
     # 3. Execution
     try:
@@ -166,10 +170,13 @@ async def handle_task(
         logger.warning(
             f"Rate limit hit during execution for {entity_type} {source_id}: {e}"
         )
-        # Yield 429 to Cloud Tasks for native backoff
-        raise HTTPException(
-            status_code=429, detail="Monday API rate limit exhausted. Requeueing."
-        ) from e
+        import time
+
+        schedule_time = time.time() + e.retry_in_seconds
+        orchestration.task_queue.enqueue_task(
+            job_id, stage, task, schedule_time=schedule_time
+        )
+        return TaskResponse(status="skipped", reason="rate_limited_requeued")
     except Exception as e:
         logger.error(f"Failed to execute mutation for {entity_type} {source_id}: {e}")
         # Pass 500 errors to Cloud Tasks which will retry based on its config
