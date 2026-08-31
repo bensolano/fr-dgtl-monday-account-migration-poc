@@ -112,11 +112,15 @@
 *   **Local Execution Fallback:** Implement a bounded `asyncio.Queue` worker pool tied to the FastAPI lifecycle to simulate Cloud Tasks execution locally without requiring external GCP queueing infrastructure.
 *   Continue with Phase 4 (Reporting & Ops).
 
-## 2026-08-31 - Rate Limiting & Local Execution Refactor
+## 2026-08-31 - Rate Limiting, Frontend Parity, and Local DX Fixes
 **Decisions Made:**
-*   **Rate Limiting:** Adopted the Re-enqueue Pattern for rate limit mitigation. Instead of throwing HTTP 429s which rely on generic Cloud Tasks backoff, workers now return `200 OK` but explicitly re-enqueue tasks with a `schedule_time` offset by the exact exact rate limit `retry_in` seconds, preserving budget efficiency and tight schedules.
+*   **Rate Limiting:** Adopted the Re-enqueue Pattern for rate limit mitigation. Instead of throwing HTTP 429s which rely on generic Cloud Tasks backoff, workers now return `200 OK` but explicitly re-enqueue tasks with a `schedule_time` offset by the exact rate limit `retry_in` seconds, preserving budget efficiency and tight schedules.
 *   **Local Simulation:** Bypassed the need for live GCP Cloud Tasks by injecting a lightweight, FastAPI-lifespan-tied `LocalTaskQueue`. Background loops intercept task messages in `asyncio.Queue` and send local HTTP POST requests, natively mimicking Cloud Tasks webhooks and providing a complete offline testing cycle.
 *   **Dead Letter Queue (DLQ):** Implemented an application-level DLQ. Tasks now carry a `retry_count` in their payload. Non-rate-limit exceptions cause the worker to increment the counter and re-enqueue (up to 3 times) with exponential backoff. Upon total exhaustion, the task is saved to a `dead_letters` collection in Firestore, marked as completed in the DAG so it doesn't hang the pipeline, and safely dropped.
+*   **Deferred Write Authorization:** Implemented "Explicit consent UI" by splitting API key inputs. The source API key is provided for Discovery, and the destination API key is only requested post-discovery before Execution, mitigating risk.
+*   **Capability Reporting:** Added a static Migration Capability Matrix summary directly to the Markdown report and the React UI for better user transparency.
+*   **Job Lifecycle Controls:** Added `CANCEL` and `DELETE` endpoints to the backend and surfaced them via danger buttons in the UI for complete data and execution lifecycle management.
+*   **Lazy GCP Client Initialization:** Enforced the Lazy Initialization pattern (using `@property` accessors) for all Google Cloud SDK clients (`firestore.Client`, `storage.Client`, `SecretManagerServiceClient`, and `CloudTasksClient`) across the core engines to fix aggressive file descriptor (FD) leaks and gRPC multi-processing warnings when running under `uvicorn` and FastAPI's `BackgroundTasks`.
 
 **Current State:**
 *   Updated `CloudTaskQueue.enqueue_task` in `src/core/task_deps.py` to accept `schedule_time` (converting it into `timestamp_pb2` payload).
@@ -132,18 +136,6 @@
 *   Updated `docs/03-implementation-roadmap.md` to check off Phase 3 retry policy constraints since exact re-enqueue delays and DLQ are fully implemented. 
 *   **CLEAN Architecture Refactor:** Extracted the mathematical logic for the Token Bucket into a pure `TokenBucketRateLimiter` class (SRP) in `src/core/rate_limit.py` and extracted time calculations into `src/core/time_utils.py`.
 *   **Dependency Inversion (DIP):** Removed all inline instantiations of the `StateManager` and rate limiter. `ExecutionEngine` and `JobEngine` now strictly rely on `StateInterface`. `StateManager` now accepts `TokenBucketInterface` as an injected dependency, natively wired via FastAPI's composition root in `job_routes.py` and `worker_routes.py`.
-
-**Next Up:**
-*   Continue with Phase 4 (Reporting & Ops).
-*   Start implementing BigQuery `migration_events` table + live progress view.
-
-## 2026-08-31 - Frontend & API Parity Updates
-**Decisions Made:**
-*   **Deferred Write Authorization:** Implemented "Explicit consent UI" by splitting API key inputs. The source API key is provided for Discovery, and the destination API key is only requested post-discovery before Execution, mitigating risk.
-*   **Capability Reporting:** Added a static Migration Capability Matrix summary directly to the Markdown report and the React UI for better user transparency.
-*   **Job Lifecycle Controls:** Added `CANCEL` and `DELETE` endpoints to the backend and surfaced them via danger buttons in the UI for complete data and execution lifecycle management.
-
-**Current State:**
 *   Updated `JobCreateRequest` to only require `source_api_key`.
 *   Added `ExecuteJobRequest` expecting `dest_api_key` to `POST /jobs/{job_id}/execute`.
 *   Created `DELETE /jobs/{job_id}` endpoint to purge Firestore documents, Secret Manager keys, and GCS artifacts.
@@ -152,12 +144,6 @@
 *   Appended the static capability matrix appendix to `ReportEngine.generate_markdown_report`.
 *   Completely overhauled `frontend/src/App.tsx` and `App.css` to introduce the explicit step-by-step workflow, capability component, and danger actions.
 *   Checked off "Explicit consent UI" in the roadmap.
-
-## 2026-08-31 - gRPC Lazy Loading & Local DX Fixes
-**Decisions Made:**
-*   **Lazy GCP Client Initialization:** Enforced the Lazy Initialization pattern (using `@property` accessors) for all Google Cloud SDK clients (`firestore.Client`, `storage.Client`, `SecretManagerServiceClient`, and `CloudTasksClient`) across the core engines to fix aggressive file descriptor (FD) leaks and gRPC multi-processing warnings when running under `uvicorn` and FastAPI's `BackgroundTasks`.
-
-**Current State:**
 *   Refactored `GCPClients` singleton in `src/core/gcp.py` to instantiate clients lazily.
 *   Refactored `JobEngine` in `src/engines/job_engine.py` to use `@property` accessors for `db`, `storage_client`, and `secret_client`.
 *   Refactored `StateManager` in `src/core/state.py` to instantiate `firestore.Client` lazily to avoid socket duplication upon FastAPI injection.
@@ -167,4 +153,5 @@
 
 **Next Up:**
 *   Continue with Phase 4 (Reporting & Ops).
+*   Start implementing BigQuery `migration_events` table + live progress view.
 
