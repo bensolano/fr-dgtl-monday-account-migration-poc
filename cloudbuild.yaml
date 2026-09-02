@@ -68,12 +68,10 @@ steps:
       - "$_REGION"
       - "--service-account"
       - "migration-job-sa@$PROJECT_ID.iam.gserviceaccount.com"
-      - "--set-env-vars"
-      - 'PROJECT_ID=$PROJECT_ID,REPORTS_BUCKET=$PROJECT_ID-migration-reports"
+      - "--env-vars-file"
+      - "config.prod.yaml"
       - "--task-timeout"
-      - '120m"
-      - "--command=""
-      - "--args=""
+      - "120m"
 
       # 8. Deploy API Service to Cloud Run
   # Notice the --service-account flag linking the API to the Terraform-created SA
@@ -89,8 +87,8 @@ steps:
       - "$_REGION"
       - "--service-account"
       - "migration-api-sa@$PROJECT_ID.iam.gserviceaccount.com"
-      - "--set-env-vars"
-      - "PROJECT_ID=$PROJECT_ID,REPORTS_BUCKET=$PROJECT_ID-migration-reports,DISCOVERY_JOB_NAME=migration-discovery-job"
+      - "--env-vars-file"
+      - "config.prod.yaml"
       - "--allow-unauthenticated"
 
   # 8. Deploy Portal Service to Cloud Run

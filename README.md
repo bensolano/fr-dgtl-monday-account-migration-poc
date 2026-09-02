@@ -75,8 +75,18 @@ We strictly separate **Infrastructure Provisioning** (Terraform) from **Applicat
     terraform apply -var="project_id=YOUR_PROJECT_ID"
     ```
 
-2.  **Deploy Application (Manual CI/CD Trigger):**
-    Once the base infrastructure exists, use Cloud Build to build the Docker images and deploy them to Cloud Run. The build script automatically links the deployed services to the strict Service Accounts created by Terraform.
+2.  **Environment Variables Configuration:**
+    Create a `config.prod.yaml` file in the root directory. This file is used by Cloud Build to inject static environment variables into the Cloud Run services.
+    ```yaml
+    PROJECT_ID: "sandbox-bsolano"
+    REGION: "europe-west1"
+    REPORTS_BUCKET: "sandbox-bsolano-migration-reports"
+    DISCOVERY_JOB_NAME: "migration-discovery-job"
+    SERVICE_URL: "https://migration-api-216068480773.europe-west1.run.app"
+    ```
+
+3.  **Deploy Application (Manual CI/CD Trigger):**
+    Once the base infrastructure exists and your `config.prod.yaml` is populated, use Cloud Build to build the Docker images and deploy them to Cloud Run. The build script automatically links the deployed services to the strict Service Accounts created by Terraform.
     ```bash
     cd ..
     PROJECT_ID=YOUR_PROJECT_ID ./deploy.sh

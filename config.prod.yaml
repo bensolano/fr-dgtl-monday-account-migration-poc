@@ -1,0 +1,5 @@
+PROJECT_ID: "sandbox-bsolano"
+REGION: "europe-west1"
+REPORTS_BUCKET: "sandbox-bsolano-migration-reports"
+DISCOVERY_JOB_NAME: "migration-discovery-job"
+SERVICE_URL: "https://migration-api-216068480773.europe-west1.run.app"
