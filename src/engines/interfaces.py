@@ -101,6 +101,10 @@ class StateInterface(Protocol):
         """Saves a permanently failed task to the dead letter queue."""
         ...
 
+    def update_job_status(self, job_id: str, status: str) -> None:
+        """Updates the top-level status of the job."""
+        ...
+
 
 class StorageInterface(Protocol):
     """Protocol defining blob storage behavior for DAG persistence."""

@@ -244,10 +244,12 @@ class JobEngine:
 
             # Save classified inventory locally for upload
             local_classified_path = f"/tmp/{job_id}_classified_inventory.json"
-            with open(
-                local_classified_path, "w", encoding="utf-8"
-            ) as f:  # noqa: ASYNC230
-                json.dump(classified_inventory, f, indent=2)
+
+            def _write_json():
+                with open(local_classified_path, "w", encoding="utf-8") as f:
+                    json.dump(classified_inventory, f, indent=2)
+
+            await asyncio.to_thread(_write_json)
 
             # 5. Upload to Cloud Storage
             report_gcs_path = None

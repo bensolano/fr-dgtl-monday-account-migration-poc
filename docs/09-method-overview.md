@@ -111,3 +111,4 @@ After reviewing the Markdown report, the user consents to write data to the dest
   - **Firestore:** Transactionally increments `completed_tasks`.
   - If `completed_tasks == total_tasks`, the worker calls `OrchestrationEngine.enqueue_next_stage()`.
   - **Cloud Storage:** The Orchestrator downloads `dag.json`, finds the next stage (e.g., `boards`), and pushes it to **Cloud Tasks**, repeating Step 10 until the DAG is exhausted.
+  - **Firestore (Final State):** Once the DAG is fully exhausted, `OrchestrationEngine` calls `StateManager.update_job_status(job_id, "COMPLETED")` to close out the job and make the final report available.

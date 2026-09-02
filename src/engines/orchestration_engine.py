@@ -161,7 +161,7 @@ class OrchestrationEngine:
         # we will let the OrchestrationEngine just log completion for now, and rely on
         # StateManager to eventually handle the status update.
         logger.info(f"DAG Execution completely finished for job {job_id}.")
-        # self.state_manager.update_job_status(job_id, "MIGRATION_COMPLETED") # Ideal future state
+        await self.state_manager.update_job_status(job_id, "COMPLETED")
 
     async def _enqueue_stage(
         self, job_id: str, stage: str, tasks: list[TaskPayload]

@@ -176,7 +176,7 @@
 - Continue with Phase 4 (Reporting & Ops).
 - Start implementing BigQuery `migration_events` table + live progress view.
 
-## 2026-09-02 - Async GCP Clients & Cloud Tasks Tunneling
+## 2026-09-02 - Async GCP Clients, Cloud Tasks Tunneling & Architecture Fixes
 
 **Decisions Made:**
 
@@ -186,6 +186,9 @@
 - **Remove Local asyncio Queue:** Deprecated and removed the `LocalTaskQueue` and in-memory background worker loop `local_queue.py` that simulated Cloud Tasks.
 - **Consistent Execution Context:** All environments (local and production) will now use `CloudTaskQueue` and dispatch directly to Google Cloud Tasks.
 - **Local Tunnels:** Local development will use tunneling tools (e.g. `ngrok`) set via the `SERVICE_URL` environment variable to receive webhooks from actual Cloud Tasks, providing higher fidelity parity between local testing and production execution.
+- **Job Status Persistence:** Fully implemented the `update_job_status` interface pattern across the `StateInterface` and `StateManager` to respect SOLID principles. The `OrchestrationEngine` now properly signals DAG completion without requiring direct access to the `JobEngine` or Firestore SDK.
+- **Async I/O:** Fixed a blocking I/O warning (ASYNC230) in `job_engine.py` by deferring `json.dump` operations to `asyncio.to_thread`.
+- **Cloud Tasks Webhook Routing:** Clarified documentation regarding the FastAPI webhook routing design where Cloud Tasks targets `{service_url}/api/v1/worker/{stage}` to leverage the exact same Cloud Run service for both web and background processing.
 
 **Current State:**
 
@@ -198,6 +201,11 @@
 - Removed `local_worker_loop` background tasks from the FastAPI lifespan in `src/api/main.py`.
 - Updated `get_task_queue()` in `src/core/task_deps.py` to unconditionally return `CloudTaskQueue`.
 - Updated `docs/08-local-vs-prod-architecture.md` and `docs/09-method-overview.md` to reflect the tunneling architecture.
+- Added `update_job_status` to `StateInterface` (`src/engines/interfaces.py`).
+- Implemented `update_job_status` in `StateManager` (`src/core/state.py`) to execute Firestore document updates.
+- Updated `OrchestrationEngine` to invoke `update_job_status` with `COMPLETED` when the final stage concludes.
+- Fixed `ASYNC230` in `JobEngine` by running file writes in a thread pool.
+- Validated all 30 tests pass and linters (`ruff`) show no errors.
 
 **Next Up:**
 

@@ -326,3 +326,20 @@ class StateManager:
         doc_data = doc.model_dump()
         doc_data["failed_at"] = firestore.SERVER_TIMESTAMP
         await dlq_ref.set(doc_data)
+
+    async def update_job_status(self, job_id: str, status: str) -> None:
+        """
+        Updates the overall status of the migration job.
+
+        Args:
+            job_id (str): The current job ID.
+            status (str): The new status (e.g., 'MIGRATION_COMPLETED').
+        """
+        if not self.db:
+            logger.info(f"Local dev fallback - Job {job_id} status updated to {status}")
+            return
+
+        job_ref = self.db.collection("jobs").document(job_id)
+        await job_ref.update(
+            {"status": status, "updated_at": firestore.SERVER_TIMESTAMP}
+        )
