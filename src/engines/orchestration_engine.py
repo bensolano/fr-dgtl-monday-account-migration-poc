@@ -97,7 +97,7 @@ class OrchestrationEngine:
         )
         return dag
 
-    def enqueue_dag(self, job_id: str, dag: MigrationDag) -> None:
+    async def enqueue_dag(self, job_id: str, dag: MigrationDag) -> None:
         """
         Enqueues the first stage of the DAG to Cloud Tasks.
         In a full implementation, subsequent stages are gated via Pub/Sub or status listeners.
@@ -107,16 +107,18 @@ class OrchestrationEngine:
             dag: The parsed DAG of tasks.
         """
         # Initialize DAG state counters in Firestore via injected interface
-        self.state_manager.initialize_dag_state(job_id, dag)
+        await self.state_manager.initialize_dag_state(job_id, dag)
 
         # Upload the DAG to storage so workers can access it for the next stages
-        self.dag_storage.save_dag(job_id, dag)
+        await self.dag_storage.save_dag(job_id, dag)
         logger.info(f"Saved DAG for job {job_id} to storage.")
 
         # Phase 3: Enqueue only the first valid stage to kick off the DAG
-        self.enqueue_next_stage(job_id, current_stage=None)
+        await self.enqueue_next_stage(job_id, current_stage=None)
 
-    def enqueue_next_stage(self, job_id: str, current_stage: str | None = None) -> None:
+    async def enqueue_next_stage(
+        self, job_id: str, current_stage: str | None = None
+    ) -> None:
         """
         Enqueues the next valid stage of the DAG after the current stage completes.
 
@@ -125,7 +127,7 @@ class OrchestrationEngine:
             current_stage: The stage that just finished (None if starting).
         """
         # Download the DAG from storage
-        dag = self.dag_storage.load_dag(job_id)
+        dag = await self.dag_storage.load_dag(job_id)
 
         if not dag:
             logger.error(
@@ -149,7 +151,7 @@ class OrchestrationEngine:
                 logger.info(
                     f"Enqueuing next DAG stage: '{stage}' with {len(tasks)} tasks."
                 )
-                self._enqueue_stage(job_id, stage, tasks)
+                await self._enqueue_stage(job_id, stage, tasks)
                 return
 
         # If we reach here, the DAG is entirely complete.
@@ -161,10 +163,12 @@ class OrchestrationEngine:
         logger.info(f"DAG Execution completely finished for job {job_id}.")
         # self.state_manager.update_job_status(job_id, "MIGRATION_COMPLETED") # Ideal future state
 
-    def _enqueue_stage(self, job_id: str, stage: str, tasks: list[TaskPayload]) -> None:
+    async def _enqueue_stage(
+        self, job_id: str, stage: str, tasks: list[TaskPayload]
+    ) -> None:
         """Helper to enqueue a list of tasks to a specific queue via the interface."""
         for t in tasks:
             try:
-                self.task_queue.enqueue_task(job_id, stage, t)
+                await self.task_queue.enqueue_task(job_id, stage, t)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to enqueue task {t.source_id} for {stage}: {e}")

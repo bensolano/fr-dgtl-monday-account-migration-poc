@@ -100,7 +100,7 @@ async def handle_task(
         import time
 
         schedule_time = time.time() + retry_in
-        orchestration.task_queue.enqueue_task(
+        await orchestration.task_queue.enqueue_task(
             job_id, stage, task, schedule_time=schedule_time
         )
         return TaskResponse(status="skipped", reason="rate_limited_requeued")
@@ -154,7 +154,7 @@ async def handle_task(
                 f"Stage '{plural_stage}' for job {job_id} is completely finished!"
             )
             # Use the injected orchestration to trigger the next stage
-            orchestration.enqueue_next_stage(job_id, current_stage=plural_stage)
+            await orchestration.enqueue_next_stage(job_id, current_stage=plural_stage)
 
         return TaskResponse(status="success", dest_id=str(dest_id))
 
@@ -165,7 +165,7 @@ async def handle_task(
         import time
 
         schedule_time = time.time() + e.retry_in_seconds
-        orchestration.task_queue.enqueue_task(
+        await orchestration.task_queue.enqueue_task(
             job_id, stage, task, schedule_time=schedule_time
         )
         return TaskResponse(status="skipped", reason="rate_limited_requeued")
@@ -180,7 +180,7 @@ async def handle_task(
             )
 
             schedule_time = time_utils.calculate_exponential_backoff(task.retry_count)
-            orchestration.task_queue.enqueue_task(
+            await orchestration.task_queue.enqueue_task(
                 job_id, stage, task, schedule_time=schedule_time
             )
             return TaskResponse(status="skipped", reason="transient_error_requeued")
@@ -199,6 +199,8 @@ async def handle_task(
                 logger.info(
                     f"Stage '{plural_stage}' for job {job_id} is completely finished (with some dead letters)!"
                 )
-                orchestration.enqueue_next_stage(job_id, current_stage=plural_stage)
+                await orchestration.enqueue_next_stage(
+                    job_id, current_stage=plural_stage
+                )
 
             return TaskResponse(status="failed", reason="dead_lettered")

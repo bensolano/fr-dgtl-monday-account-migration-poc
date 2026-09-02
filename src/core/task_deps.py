@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -48,7 +49,7 @@ class GCSDagStorage:
             self._bucket = self.client.bucket(self.bucket_name)
         return self._bucket
 
-    def save_dag(self, job_id: str, dag: MigrationDag) -> None:
+    async def save_dag(self, job_id: str, dag: MigrationDag) -> None:
         """
         Serializes and uploads the MigrationDag to GCS.
 
@@ -59,10 +60,16 @@ class GCSDagStorage:
         Returns:
             None
         """
-        blob = self.bucket.blob(f"reports/{job_id}/dag.json")
-        blob.upload_from_string(dag.model_dump_json(), content_type="application/json")
 
-    def load_dag(self, job_id: str) -> MigrationDag | None:
+        def _save():
+            blob = self.bucket.blob(f"reports/{job_id}/dag.json")
+            blob.upload_from_string(
+                dag.model_dump_json(), content_type="application/json"
+            )
+
+        await asyncio.to_thread(_save)
+
+    async def load_dag(self, job_id: str) -> MigrationDag | None:
         """
         Downloads and deserializes the MigrationDag from GCS.
 
@@ -72,10 +79,14 @@ class GCSDagStorage:
         Returns:
             MigrationDag | None: The parsed DAG if found, else None.
         """
-        blob = self.bucket.blob(f"reports/{job_id}/dag.json")
-        if not blob.exists():
-            return None
-        return MigrationDag.model_validate_json(blob.download_as_string())
+
+        def _load():
+            blob = self.bucket.blob(f"reports/{job_id}/dag.json")
+            if not blob.exists():
+                return None
+            return MigrationDag.model_validate_json(blob.download_as_string())
+
+        return await asyncio.to_thread(_load)
 
 
 class CloudTaskQueue:
@@ -106,7 +117,7 @@ class CloudTaskQueue:
 
         return gcp_clients.tasks_client
 
-    def enqueue_task(
+    async def enqueue_task(
         self,
         job_id: str,
         stage: str,
@@ -148,7 +159,7 @@ class CloudTaskQueue:
             timestamp.FromSeconds(int(schedule_time))
             task_def["schedule_time"] = timestamp
 
-        self.client.create_task(request={"parent": parent, "task": task_def})
+        await self.client.create_task(request={"parent": parent, "task": task_def})
 
 
 def get_task_queue():

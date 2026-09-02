@@ -151,7 +151,7 @@ async def execute_job(
 
         await job_engine.set_job_status(job_id, "EXECUTING")
 
-        orchestration.enqueue_dag(job_id, dag)
+        await orchestration.enqueue_dag(job_id, dag)
 
         return ExecuteJobResponse(
             status="EXECUTING",

@@ -23,7 +23,7 @@ class LocalTaskQueue:
         """
         self.service_url = service_url
 
-    def enqueue_task(
+    async def enqueue_task(
         self,
         job_id: str,
         stage: str,
@@ -64,9 +64,9 @@ class LocalTaskQueue:
                 loop.create_task(delayed_enqueue())
             except RuntimeError:
                 # If no loop is running, just put it immediately (fallback)
-                _local_queue.put_nowait((stage, payload))
+                await _local_queue.put((stage, payload))
         else:
-            _local_queue.put_nowait((stage, payload))
+            await _local_queue.put((stage, payload))
 
 
 async def local_worker_loop(worker_id: int, service_url: str = "http://127.0.0.1:8000"):

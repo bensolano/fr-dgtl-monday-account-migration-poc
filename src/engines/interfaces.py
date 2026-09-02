@@ -105,11 +105,11 @@ class StateInterface(Protocol):
 class StorageInterface(Protocol):
     """Protocol defining blob storage behavior for DAG persistence."""
 
-    def save_dag(self, job_id: str, dag: MigrationDag) -> None:
+    async def save_dag(self, job_id: str, dag: MigrationDag) -> None:
         """Saves a computed DAG to storage."""
         ...
 
-    def load_dag(self, job_id: str) -> MigrationDag | None:
+    async def load_dag(self, job_id: str) -> MigrationDag | None:
         """Loads a previously saved DAG from storage."""
         ...
 
@@ -117,7 +117,7 @@ class StorageInterface(Protocol):
 class TaskQueueInterface(Protocol):
     """Protocol defining task enqueueing behavior."""
 
-    def enqueue_task(
+    async def enqueue_task(
         self,
         job_id: str,
         stage: str,
