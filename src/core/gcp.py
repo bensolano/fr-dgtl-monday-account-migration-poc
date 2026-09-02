@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any
 
+import google.auth
 from google.cloud import storage
 from google.cloud.firestore import AsyncClient as FirestoreAsyncClient
 from google.cloud.run_v2 import JobsAsyncClient, RunJobRequest
@@ -22,6 +23,7 @@ DISCOVERY_JOB_NAME = settings.DISCOVERY_JOB_NAME
 
 class GCPClients:
     def __init__(self) -> None:
+        self._credentials = None
         self._storage_client = None
         self._secret_client = None
         self._run_client = None
@@ -29,10 +31,21 @@ class GCPClients:
         self._tasks_client = None
 
     @property
+    def credentials(self):
+        if self._credentials is None:
+            try:
+                self._credentials, _ = google.auth.default()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to fetch default credentials: {e}")
+        return self._credentials
+
+    @property
     def storage_client(self):
         if self._storage_client is None:
             try:
-                self._storage_client = storage.Client(project=PROJECT_ID)
+                self._storage_client = storage.Client(
+                    project=PROJECT_ID, credentials=self.credentials
+                )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to initialize Storage client: {e}")
         return self._storage_client
@@ -41,7 +54,9 @@ class GCPClients:
     def secret_client(self):
         if self._secret_client is None:
             try:
-                self._secret_client = SecretManagerServiceAsyncClient()
+                self._secret_client = SecretManagerServiceAsyncClient(
+                    credentials=self.credentials
+                )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to initialize Secret Manager client: {e}")
         return self._secret_client
@@ -50,7 +65,7 @@ class GCPClients:
     def run_client(self):
         if self._run_client is None:
             try:
-                self._run_client = JobsAsyncClient()
+                self._run_client = JobsAsyncClient(credentials=self.credentials)
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to initialize Cloud Run client: {e}")
         return self._run_client
@@ -59,7 +74,9 @@ class GCPClients:
     def firestore_client(self):
         if self._firestore_client is None:
             try:
-                self._firestore_client = FirestoreAsyncClient(project=PROJECT_ID)
+                self._firestore_client = FirestoreAsyncClient(
+                    project=PROJECT_ID, credentials=self.credentials
+                )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to initialize Firestore client: {e}")
         return self._firestore_client
@@ -68,7 +85,7 @@ class GCPClients:
     def tasks_client(self):
         if self._tasks_client is None:
             try:
-                self._tasks_client = CloudTasksAsyncClient()
+                self._tasks_client = CloudTasksAsyncClient(credentials=self.credentials)
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to initialize Cloud Tasks client: {e}")
         return self._tasks_client
