@@ -33,13 +33,15 @@
 
 ### 02.10
 
-- gcp_clients.py : replace clients with async versions when possible, running storage in asyncio.to_thread, refactor with protocol
-
+- gcp_clients.py : replace clients with async versions, except storage running in asyncio.to_thread, refactor with interface protocol
+- Replace local asyncio queue implem with regular cloud tasks calls
+- Add config.prod.yml to pass cloud run env vars to deploy yml
+- WIP: test migration > need to include reporting in UI
 
 TODO:
 - TEST MIGRATION PHASE
+- Add reporting in UI
 - Fix tests
 - Document tests and remove bloat
-- Replace local asyncio queue with cloud tasks 
 - Move from background tasks locally to container-centered approach reproducing production env architecture
 - Add estimated discovery time in UI
