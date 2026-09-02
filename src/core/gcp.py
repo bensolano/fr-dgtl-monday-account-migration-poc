@@ -1,9 +1,14 @@
+import asyncio
 import datetime
 import json
 import logging
 from typing import Any
 
-from google.cloud import run_v2, secretmanager, storage
+from google.cloud import storage
+from google.cloud.firestore import AsyncClient as FirestoreAsyncClient
+from google.cloud.run_v2 import JobsAsyncClient, RunJobRequest
+from google.cloud.secretmanager import SecretManagerServiceAsyncClient
+from google.cloud.tasks_v2 import CloudTasksAsyncClient
 
 from src.core.config import settings
 
@@ -20,6 +25,8 @@ class GCPClients:
         self._storage_client = None
         self._secret_client = None
         self._run_client = None
+        self._firestore_client = None
+        self._tasks_client = None
 
     @property
     def storage_client(self):
@@ -34,7 +41,7 @@ class GCPClients:
     def secret_client(self):
         if self._secret_client is None:
             try:
-                self._secret_client = secretmanager.SecretManagerServiceClient()
+                self._secret_client = SecretManagerServiceAsyncClient()
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to initialize Secret Manager client: {e}")
         return self._secret_client
@@ -43,16 +50,34 @@ class GCPClients:
     def run_client(self):
         if self._run_client is None:
             try:
-                self._run_client = run_v2.JobsClient()
+                self._run_client = JobsAsyncClient()
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to initialize Cloud Run client: {e}")
         return self._run_client
+
+    @property
+    def firestore_client(self):
+        if self._firestore_client is None:
+            try:
+                self._firestore_client = FirestoreAsyncClient(project=PROJECT_ID)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Firestore client: {e}")
+        return self._firestore_client
+
+    @property
+    def tasks_client(self):
+        if self._tasks_client is None:
+            try:
+                self._tasks_client = CloudTasksAsyncClient()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to initialize Cloud Tasks client: {e}")
+        return self._tasks_client
 
 
 gcp_clients = GCPClients()
 
 
-def store_job_secrets(job_id: str, source_api_key: str) -> None:
+async def store_job_secrets(job_id: str, source_api_key: str) -> None:
     if not gcp_clients.secret_client:
         logger.warning(
             f"Secret Manager not available. Storing source secret for job {job_id} in memory."
@@ -71,14 +96,14 @@ def store_job_secrets(job_id: str, source_api_key: str) -> None:
 
     # Source Key
     source_secret_id = f"job-{job_id}-source-key"
-    gcp_clients.secret_client.create_secret(
+    await gcp_clients.secret_client.create_secret(
         request={
             "parent": parent,
             "secret_id": source_secret_id,
             "secret": {"replication": {"automatic": {}}},
         }
     )
-    gcp_clients.secret_client.add_secret_version(
+    await gcp_clients.secret_client.add_secret_version(
         request={
             "parent": f"{parent}/secrets/{source_secret_id}",
             "payload": {"data": source_api_key.encode("UTF-8")},
@@ -86,7 +111,7 @@ def store_job_secrets(job_id: str, source_api_key: str) -> None:
     )
 
 
-def store_dest_secret(job_id: str, dest_api_key: str) -> None:
+async def store_dest_secret(job_id: str, dest_api_key: str) -> None:
     if not gcp_clients.secret_client:
         logger.warning(
             f"Secret Manager not available. Storing dest secret for job {job_id} in memory."
@@ -103,14 +128,14 @@ def store_dest_secret(job_id: str, dest_api_key: str) -> None:
 
     parent = f"projects/{PROJECT_ID}"
     dest_secret_id = f"job-{job_id}-dest-key"
-    gcp_clients.secret_client.create_secret(
+    await gcp_clients.secret_client.create_secret(
         request={
             "parent": parent,
             "secret_id": dest_secret_id,
             "secret": {"replication": {"automatic": {}}},
         }
     )
-    gcp_clients.secret_client.add_secret_version(
+    await gcp_clients.secret_client.add_secret_version(
         request={
             "parent": f"{parent}/secrets/{dest_secret_id}",
             "payload": {"data": dest_api_key.encode("UTF-8")},
@@ -118,7 +143,7 @@ def store_dest_secret(job_id: str, dest_api_key: str) -> None:
     )
 
 
-def delete_job_secrets(job_id: str) -> None:
+async def delete_job_secrets(job_id: str) -> None:
     if not gcp_clients.secret_client:
         return
 
@@ -126,37 +151,40 @@ def delete_job_secrets(job_id: str) -> None:
     for suffix in ["source-key", "dest-key"]:
         secret_name = f"{parent}/secrets/job-{job_id}-{suffix}"
         try:
-            gcp_clients.secret_client.delete_secret(request={"name": secret_name})
+            await gcp_clients.secret_client.delete_secret(request={"name": secret_name})
             logger.info(f"Deleted secret {secret_name}")
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to delete secret {secret_name}: {e}")
 
 
-def delete_gcs_artifacts(job_id: str) -> None:
+async def delete_gcs_artifacts(job_id: str) -> None:
     if not gcp_clients.storage_client:
         return
 
-    bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
-    blobs = bucket.list_blobs(prefix=f"reports/{job_id}/")
-    for blob in blobs:
-        try:
-            blob.delete()
-            logger.info(f"Deleted GCS artifact {blob.name}")
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Failed to delete GCS artifact {blob.name}: {e}")
+    def _delete_blobs():
+        bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
+        blobs = bucket.list_blobs(prefix=f"reports/{job_id}/")
+        for blob in blobs:
+            try:
+                blob.delete()
+                logger.info(f"Deleted GCS artifact {blob.name}")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to delete GCS artifact {blob.name}: {e}")
 
-    # Also delete dag storage if they use a separate prefix like dags/{job_id}
-    # It might be in the same bucket.
-    blobs = bucket.list_blobs(prefix=f"dags/{job_id}/")
-    for blob in blobs:
-        try:
-            blob.delete()
-            logger.info(f"Deleted GCS artifact {blob.name}")
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Failed to delete GCS artifact {blob.name}: {e}")
+        # Also delete dag storage if they use a separate prefix like dags/{job_id}
+        # It might be in the same bucket.
+        blobs = bucket.list_blobs(prefix=f"dags/{job_id}/")
+        for blob in blobs:
+            try:
+                blob.delete()
+                logger.info(f"Deleted GCS artifact {blob.name}")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to delete GCS artifact {blob.name}: {e}")
+
+    await asyncio.to_thread(_delete_blobs)
 
 
-def get_dest_api_key(job_id: str) -> str:
+async def get_dest_api_key(job_id: str) -> str:
     if not gcp_clients.secret_client:
         logger.warning(
             f"Secret Manager not available. Retrieving dest secret for job {job_id} from memory."
@@ -176,11 +204,13 @@ def get_dest_api_key(job_id: str) -> str:
         )
 
     name = f"projects/{PROJECT_ID}/secrets/job-{job_id}-dest-key/versions/latest"
-    response = gcp_clients.secret_client.access_secret_version(request={"name": name})
+    response = await gcp_clients.secret_client.access_secret_version(
+        request={"name": name}
+    )
     return response.payload.data.decode("UTF-8")
 
 
-def trigger_cloud_run_discovery_job(job_id: str) -> bool:
+async def trigger_cloud_run_discovery_job(job_id: str) -> bool:
     if not gcp_clients.run_client or not DISCOVERY_JOB_NAME:
         logger.warning(
             f"Cloud Run Job client or DISCOVERY_JOB_NAME not configured. Cannot trigger job {job_id}."
@@ -188,7 +218,7 @@ def trigger_cloud_run_discovery_job(job_id: str) -> bool:
         return False
 
     name = f"projects/{PROJECT_ID}/locations/{REGION}/jobs/{DISCOVERY_JOB_NAME}"
-    request = run_v2.RunJobRequest(
+    request = RunJobRequest(
         name=name,
         overrides={
             "container_overrides": [{"env": [{"name": "JOB_ID", "value": job_id}]}]
@@ -196,7 +226,7 @@ def trigger_cloud_run_discovery_job(job_id: str) -> bool:
     )
 
     try:
-        operation = gcp_clients.run_client.run_job(request=request)
+        operation = await gcp_clients.run_client.run_job(request=request)
         logger.info(
             f"Triggered Cloud Run Job for {job_id}. Operation: {operation.operation.name}"
         )
@@ -206,35 +236,46 @@ def trigger_cloud_run_discovery_job(job_id: str) -> bool:
         raise
 
 
-def get_inventory(job_id: str) -> dict[str, Any]:
+async def get_inventory(job_id: str) -> dict[str, Any]:
     if not gcp_clients.storage_client:
         raise RuntimeError("Storage client unconfigured.")
 
-    bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
-    inventory_blob = bucket.blob(f"reports/{job_id}/inventory.json")
+    def _download():
+        bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
+        inventory_blob = bucket.blob(f"reports/{job_id}/inventory.json")
 
-    if not inventory_blob.exists():
-        raise FileNotFoundError("Classified inventory not found in GCS.")
+        if not inventory_blob.exists():
+            raise FileNotFoundError("Classified inventory not found in GCS.")
 
-    return json.loads(inventory_blob.download_as_string())
+        return json.loads(inventory_blob.download_as_string())
+
+    return await asyncio.to_thread(_download)
 
 
-def get_report_signed_url(report_gcs_path: str) -> str:
+async def get_report_signed_url(report_gcs_path: str) -> str:
     if not gcp_clients.storage_client:
         raise RuntimeError("Storage client unconfigured.")
-    bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
-    blob = bucket.blob(report_gcs_path)
 
-    return blob.generate_signed_url(
-        version="v4",
-        expiration=datetime.timedelta(minutes=15),
-        method="GET",
-    )
+    def _generate():
+        bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
+        blob = bucket.blob(report_gcs_path)
+
+        return blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(minutes=15),
+            method="GET",
+        )
+
+    return await asyncio.to_thread(_generate)
 
 
-def get_report_bytes(report_gcs_path: str) -> bytes:
+async def get_report_bytes(report_gcs_path: str) -> bytes:
     if not gcp_clients.storage_client:
         raise RuntimeError("Storage client unconfigured.")
-    bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
-    blob = bucket.blob(report_gcs_path)
-    return blob.download_as_bytes()
+
+    def _download():
+        bucket = gcp_clients.storage_client.bucket(REPORTS_BUCKET)
+        blob = bucket.blob(report_gcs_path)
+        return blob.download_as_bytes()
+
+    return await asyncio.to_thread(_download)

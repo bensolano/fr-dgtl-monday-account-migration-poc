@@ -7,14 +7,15 @@ from src.engines.job_engine import JobEngine
 
 @pytest.fixture
 def mock_gcp_clients():
-    with (
-        patch("src.engines.job_engine.firestore.Client") as mock_db,
-        patch("src.engines.job_engine.storage.Client") as mock_storage,
-        patch(
-            "src.engines.job_engine.secretmanager.SecretManagerServiceClient"
-        ) as mock_secret,
-    ):
-        yield mock_db, mock_storage, mock_secret
+    mock_gcp = MagicMock()
+    mock_db = MagicMock()  # Reference builders are sync
+    mock_storage = MagicMock()
+    mock_secret = AsyncMock()
+
+    mock_gcp.firestore_client = mock_db
+    mock_gcp.storage_client = mock_storage
+    mock_gcp.secret_client = mock_secret
+    yield mock_gcp, mock_db, mock_storage, mock_secret
 
 
 @pytest.fixture
@@ -47,10 +48,12 @@ def mock_discovery_factory():
 def test_job_engine_init(
     mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
 ):
+    mock_gcp, _, _, _ = mock_gcp_clients
     engine = JobEngine(
         classifier=mock_classifier,
         reporter=mock_reporter,
         discovery_factory=mock_discovery_factory,
+        gcp_clients=mock_gcp,
         project_id="test-proj",
         reports_bucket="test-bucket",
     )
@@ -59,22 +62,23 @@ def test_job_engine_init(
     assert engine.has_firestore() is True
 
 
-def test_job_engine_set_job_status(
+@pytest.mark.asyncio
+async def test_job_engine_set_job_status(
     mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
 ):
-    mock_db, _, _ = mock_gcp_clients
-    mock_db_instance = MagicMock()
-    mock_db.return_value = mock_db_instance
+    mock_gcp, mock_db_instance, _, _ = mock_gcp_clients
 
     mock_doc = MagicMock()
     mock_db_instance.collection.return_value.document.return_value = mock_doc
+    mock_doc.set = AsyncMock()
 
     engine = JobEngine(
         classifier=mock_classifier,
         reporter=mock_reporter,
         discovery_factory=mock_discovery_factory,
+        gcp_clients=mock_gcp,
     )
-    engine.set_job_status("job-123", "RUNNING")
+    await engine.set_job_status("job-123", "RUNNING")
 
     mock_db_instance.collection.assert_called_with("jobs")
     mock_doc.set.assert_called_once()
@@ -83,26 +87,27 @@ def test_job_engine_set_job_status(
     assert kwargs["merge"] is True
 
 
-def test_job_engine_get_job(
+@pytest.mark.asyncio
+async def test_job_engine_get_job(
     mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
 ):
-    mock_db, _, _ = mock_gcp_clients
-    mock_db_instance = MagicMock()
-    mock_db.return_value = mock_db_instance
+    mock_gcp, mock_db_instance, _, _ = mock_gcp_clients
 
     mock_doc = MagicMock()
     mock_doc.exists = True
     mock_doc.to_dict.return_value = {"status": "COMPLETED"}
-    mock_db_instance.collection.return_value.document.return_value.get.return_value = (
-        mock_doc
-    )
+
+    mock_doc_ref = AsyncMock()
+    mock_doc_ref.get.return_value = mock_doc
+    mock_db_instance.collection.return_value.document.return_value = mock_doc_ref
 
     engine = JobEngine(
         classifier=mock_classifier,
         reporter=mock_reporter,
         discovery_factory=mock_discovery_factory,
+        gcp_clients=mock_gcp,
     )
-    result = engine.get_job("job-123")
+    result = await engine.get_job("job-123")
     assert result == {"status": "COMPLETED"}
 
 
@@ -110,23 +115,23 @@ def test_job_engine_get_job(
 async def test_execute_discovery_job(
     mock_gcp_clients, mock_classifier, mock_reporter, mock_discovery_factory
 ):
-    _mock_db, mock_storage, mock_secret = mock_gcp_clients
+    mock_gcp, _mock_db, mock_storage_instance, mock_secret_instance = mock_gcp_clients
 
     # Mock Secret Manager
-    mock_secret_instance = MagicMock()
-    mock_secret.return_value = mock_secret_instance
     mock_secret_response = MagicMock()
     mock_secret_response.payload.data.decode.return_value = "fake_api_key"
     mock_secret_instance.access_secret_version.return_value = mock_secret_response
 
-    # Mock Storage
-    mock_storage_instance = MagicMock()
-    mock_storage.return_value = mock_storage_instance
+    # Mock the db set to avoid await error
+    mock_doc = MagicMock()
+    mock_doc.set = AsyncMock()
+    _mock_db.collection.return_value.document.return_value = mock_doc
 
     engine = JobEngine(
         classifier=mock_classifier,
         reporter=mock_reporter,
         discovery_factory=mock_discovery_factory,
+        gcp_clients=mock_gcp,
     )
 
     # Avoid file writing in test

@@ -5,7 +5,7 @@ from google.cloud import firestore
 
 from src.core.config import settings
 from src.core.schemas import DeadLetterDocument, JobDocument, MigrationDag, TaskPayload
-from src.engines.interfaces import TokenBucketInterface
+from src.engines.interfaces import GcpClientsInterface, TokenBucketInterface
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ class StateManager:
 
     def __init__(
         self,
+        gcp_clients: GcpClientsInterface,
         project_id: str = PROJECT_ID,
         rate_limiter: TokenBucketInterface | None = None,
     ):
@@ -26,25 +27,22 @@ class StateManager:
         Initializes the StateManager.
 
         Args:
+            gcp_clients: Injected GCP clients interface.
             project_id (str): The GCP project ID for Firestore.
             rate_limiter (TokenBucketInterface | None): Injected pure mathematical rate limiter.
         """
+        self.gcp_clients = gcp_clients
         self.project_id = project_id
         self.rate_limiter = rate_limiter
         self._db = None
 
     @property
     def db(self):
-        if self._db is None:
-            try:
-                self._db = firestore.Client(project=self.project_id)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    f"Failed to initialize Firestore client in StateManager: {e}"
-                )
-        return self._db
+        if self._db is not None:
+            return self._db
+        return self.gcp_clients.firestore_client
 
-    def get_job(self, job_id: str) -> JobDocument | None:
+    async def get_job(self, job_id: str) -> JobDocument | None:
         """
         Retrieves the state of a migration job.
 
@@ -56,12 +54,14 @@ class StateManager:
         """
         if not self.db:
             return None
-        doc = self.db.collection("jobs").document(job_id).get()
+        doc = await self.db.collection("jobs").document(job_id).get()
         if doc.exists:
             return JobDocument.model_validate(doc.to_dict())
         return None
 
-    def get_dest_id(self, job_id: str, entity_type: str, source_id: str) -> str | None:
+    async def get_dest_id(
+        self, job_id: str, entity_type: str, source_id: str
+    ) -> str | None:
         """
         Retrieves the destination ID for a given source ID to ensure idempotency.
 
@@ -82,14 +82,14 @@ class StateManager:
             .collection("id_map")
             .document(f"{entity_type}_{source_id}")
         )
-        doc = doc_ref.get()
+        doc = await doc_ref.get()
 
         if doc.exists:
             data = doc.to_dict()
             return data.get("dest_id")
         return None
 
-    def set_dest_id(
+    async def set_dest_id(
         self, job_id: str, entity_type: str, source_id: str, dest_id: str
     ) -> None:
         """
@@ -113,7 +113,7 @@ class StateManager:
             .collection("id_map")
             .document(f"{entity_type}_{source_id}")
         )
-        doc_ref.set(
+        await doc_ref.set(
             {
                 "source_id": source_id,
                 "dest_id": dest_id,
@@ -122,7 +122,7 @@ class StateManager:
             }
         )
 
-    def consume_budget(
+    async def consume_budget(
         self, job_id: str, required_tokens: int = 50000
     ) -> tuple[bool, int]:
         """
@@ -147,9 +147,9 @@ class StateManager:
             .document("complexity_bucket")
         )
 
-        @firestore.transactional
-        def update_in_transaction(transaction, ref):
-            snapshot = ref.get(transaction=transaction)
+        @firestore.async_transactional
+        async def update_in_transaction(transaction, ref):
+            snapshot = await ref.get(transaction=transaction)
 
             # Default to full budget if not initialized
             current_tokens = 5000000
@@ -189,9 +189,9 @@ class StateManager:
 
                 return result.allowed, result.retry_in
 
-        return update_in_transaction(self.db.transaction(), bucket_ref)
+        return await update_in_transaction(self.db.transaction(), bucket_ref)
 
-    def sync_budget(
+    async def sync_budget(
         self, job_id: str, actual_remaining: int, reset_in_seconds: int
     ) -> None:
         """
@@ -217,9 +217,11 @@ class StateManager:
             seconds=(60 - reset_in_seconds)
         )
 
-        bucket_ref.set({"remaining_tokens": actual_remaining, "last_reset": last_reset})
+        await bucket_ref.set(
+            {"remaining_tokens": actual_remaining, "last_reset": last_reset}
+        )
 
-    def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
+    async def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
         """
         Initializes the tracking state for a DAG execution to support stage gating.
 
@@ -245,9 +247,9 @@ class StateManager:
                 stage_ref,
                 {"total_tasks": len(tasks), "completed_tasks": 0, "status": "pending"},
             )
-        batch.commit()
+        await batch.commit()
 
-    def mark_task_complete(self, job_id: str, stage: str) -> bool:
+    async def mark_task_complete(self, job_id: str, stage: str) -> bool:
         """
         Increments the completion counter for a stage and returns True if the stage is fully complete.
 
@@ -268,9 +270,9 @@ class StateManager:
             .document(stage)
         )
 
-        @firestore.transactional
-        def update_and_check(transaction, ref):
-            snapshot = ref.get(transaction=transaction)
+        @firestore.async_transactional
+        async def update_and_check(transaction, ref):
+            snapshot = await ref.get(transaction=transaction)
             if not snapshot.exists:
                 return False
 
@@ -288,9 +290,9 @@ class StateManager:
             transaction.update(ref, updates)
             return is_done
 
-        return update_and_check(self.db.transaction(), stage_ref)
+        return await update_and_check(self.db.transaction(), stage_ref)
 
-    def save_dead_letter(
+    async def save_dead_letter(
         self, job_id: str, stage: str, task: TaskPayload, error_message: str
     ) -> None:
         """
@@ -323,4 +325,4 @@ class StateManager:
 
         doc_data = doc.model_dump()
         doc_data["failed_at"] = firestore.SERVER_TIMESTAMP
-        dlq_ref.set(doc_data)
+        await dlq_ref.set(doc_data)

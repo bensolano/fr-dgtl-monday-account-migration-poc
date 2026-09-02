@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -6,20 +6,21 @@ from src.core.state import StateManager
 
 
 @pytest.fixture
-def mock_firestore_client():
-    with patch("src.core.state.firestore.Client") as mock_client:
-        mock_db = MagicMock()
-        mock_client.return_value = mock_db
-        yield mock_db
+def mock_gcp_clients():
+    mock_gcp = MagicMock()
+    mock_db = MagicMock()  # Reference builders are sync
+    mock_gcp.firestore_client = mock_db
+    yield mock_gcp
 
 
-def test_state_manager_init_success(mock_firestore_client):
-    manager = StateManager(project_id="test-project")
+def test_state_manager_init_success(mock_gcp_clients):
+    manager = StateManager(gcp_clients=mock_gcp_clients, project_id="test-project")
     assert manager.db is not None
     assert manager.project_id == "test-project"
 
 
-def test_get_job_exists(mock_firestore_client):
+@pytest.mark.asyncio
+async def test_get_job_exists(mock_gcp_clients):
     mock_doc = MagicMock()
     mock_doc.exists = True
     mock_doc.to_dict.return_value = {
@@ -31,24 +32,23 @@ def test_get_job_exists(mock_firestore_client):
     }
 
     mock_collection = MagicMock()
-    mock_document = MagicMock()
+    mock_document = AsyncMock()
 
-    mock_firestore_client.collection.return_value = mock_collection
+    mock_gcp_clients.firestore_client.collection.return_value = mock_collection
     mock_collection.document.return_value = mock_document
     mock_document.get.return_value = mock_doc
 
-    manager = StateManager()
-    # Explicitly set the mock db since it's lazy loaded now
-    manager._db = mock_firestore_client
-    result = manager.get_job("job123")
+    manager = StateManager(gcp_clients=mock_gcp_clients)
+    result = await manager.get_job("job123")
 
     assert result.status == "PENDING"
     assert result.job_id == "job123"
-    mock_firestore_client.collection.assert_called_with("jobs")
+    mock_gcp_clients.firestore_client.collection.assert_called_with("jobs")
     mock_collection.document.assert_called_with("job123")
 
 
-def test_get_dest_id_exists(mock_firestore_client):
+@pytest.mark.asyncio
+async def test_get_dest_id_exists(mock_gcp_clients):
     mock_doc = MagicMock()
     mock_doc.exists = True
     mock_doc.to_dict.return_value = {"dest_id": "dest456"}
@@ -56,38 +56,37 @@ def test_get_dest_id_exists(mock_firestore_client):
     mock_jobs = MagicMock()
     mock_job_doc = MagicMock()
     mock_id_map = MagicMock()
-    mock_id_doc = MagicMock()
+    mock_id_doc = AsyncMock()
 
-    mock_firestore_client.collection.return_value = mock_jobs
+    mock_gcp_clients.firestore_client.collection.return_value = mock_jobs
     mock_jobs.document.return_value = mock_job_doc
     mock_job_doc.collection.return_value = mock_id_map
     mock_id_map.document.return_value = mock_id_doc
     mock_id_doc.get.return_value = mock_doc
 
-    manager = StateManager()
-    manager._db = mock_firestore_client
-    result = manager.get_dest_id("job123", "board", "src123")
+    manager = StateManager(gcp_clients=mock_gcp_clients)
+    result = await manager.get_dest_id("job123", "board", "src123")
 
     assert result == "dest456"
     mock_id_map.document.assert_called_with("board_src123")
 
 
-def test_set_dest_id(mock_firestore_client):
+@pytest.mark.asyncio
+async def test_set_dest_id(mock_gcp_clients):
     mock_jobs = MagicMock()
     mock_job_doc = MagicMock()
     mock_id_map = MagicMock()
-    mock_id_doc = MagicMock()
+    mock_id_doc = AsyncMock()
 
-    mock_firestore_client.collection.return_value = mock_jobs
+    mock_gcp_clients.firestore_client.collection.return_value = mock_jobs
     mock_jobs.document.return_value = mock_job_doc
     mock_job_doc.collection.return_value = mock_id_map
     mock_id_map.document.return_value = mock_id_doc
 
-    manager = StateManager()
-    manager._db = mock_firestore_client
+    manager = StateManager(gcp_clients=mock_gcp_clients)
     with patch("src.core.state.firestore") as mock_firestore_module:
         mock_firestore_module.SERVER_TIMESTAMP = "TIMESTAMP"
-        manager.set_dest_id("job123", "board", "src123", "dest456")
+        await manager.set_dest_id("job123", "board", "src123", "dest456")
 
     mock_id_doc.set.assert_called_once_with(
         {

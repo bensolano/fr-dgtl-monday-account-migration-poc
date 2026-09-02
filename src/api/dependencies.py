@@ -1,3 +1,4 @@
+from src.core.gcp import gcp_clients
 from src.core.monday_client import MondayClient
 from src.core.rate_limit import TokenBucketRateLimiter
 from src.core.state import StateManager
@@ -23,11 +24,14 @@ def default_discovery_factory(api_key: str) -> DiscoveryEngine:
 # on every single request, which causes file descriptor leaks and thread
 # exhaustion in Uvicorn/Gunicorn.
 # ==============================================================================
-_state_manager_instance = StateManager(rate_limiter=TokenBucketRateLimiter())
+_state_manager_instance = StateManager(
+    gcp_clients=gcp_clients, rate_limiter=TokenBucketRateLimiter()
+)
 
 _job_engine_instance = JobEngine(
     classifier=ClassificationEngine(),
     reporter=ReportEngine(),
+    gcp_clients=gcp_clients,
     state_manager=_state_manager_instance,
     discovery_factory=default_discovery_factory,
 )

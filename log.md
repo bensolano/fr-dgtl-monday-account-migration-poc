@@ -31,9 +31,15 @@
 - Add static info section in report and UI containing concise version of the migration capabilit matrix
 - Implement pydantic BaseSettings for env vars, add env vars to docs
 
+### 02.10
+
+- gcp_clients.py : replace clients with async versions when possible, running storage in asyncio.to_thread, refactor with protocol
+
 
 TODO:
-- Test migration phase
+- TEST MIGRATION PHASE
+- Fix tests
 - Document tests and remove bloat
+- Replace local asyncio queue with cloud tasks 
 - Move from background tasks locally to container-centered approach reproducing production env architecture
 - Add estimated discovery time in UI

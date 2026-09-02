@@ -156,3 +156,20 @@
 *   Continue with Phase 4 (Reporting & Ops).
 *   Start implementing BigQuery `migration_events` table + live progress view.
 
+## 2026-09-02 - Async GCP Client Upgrade & Decoupling
+**Decisions Made:**
+*   **Async GCP Clients:** Upgraded to official Async Google Cloud SDKs (`FirestoreAsyncClient`, `SecretManagerServiceAsyncClient`, `JobsAsyncClient`, `CloudTasksAsyncClient`) for high-throughput, non-blocking I/O.
+*   **Storage Threading:** Wrapped synchronous `google.cloud.storage` calls in `asyncio.to_thread()` to prevent event loop blocking.
+*   **SOLID Decoupling:** Introduced `GcpClientsInterface` injected via `dependencies.py` to remove inline imports and circular dependencies in `JobEngine` and `StateManager`.
+
+**Current State:**
+*   Refactored `src/core/gcp.py` to expose async clients.
+*   Updated `StateManager` and `JobEngine` to `await` all datastore/infrastructure calls.
+*   Updated API routes (`job_routes.py`, `worker_routes.py`) to correctly `await` async engine methods.
+*   Updated test suite (`test_job_engine.py`, `test_state.py`) to use `AsyncMock` for terminal operations, ensuring all 30 tests pass.
+*   Verified local FastAPI execution without event loop hangs.
+
+**Next Up:**
+*   Continue with Phase 4 (Reporting & Ops).
+*   Start implementing BigQuery `migration_events` table + live progress view.
+

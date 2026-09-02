@@ -1,8 +1,6 @@
 import json
 import logging
 
-from google.cloud import storage
-
 from src.core.config import settings
 from src.core.local_queue import LocalTaskQueue
 from src.core.schemas import MigrationDag, TaskPayload
@@ -40,9 +38,9 @@ class GCSDagStorage:
 
     @property
     def client(self):
-        if self._client is None:
-            self._client = storage.Client(project=self.project_id)
-        return self._client
+        from src.core.gcp import gcp_clients
+
+        return gcp_clients.storage_client
 
     @property
     def bucket(self):
@@ -104,9 +102,9 @@ class CloudTaskQueue:
 
     @property
     def client(self):
-        if self._client is None and tasks_v2:
-            self._client = tasks_v2.CloudTasksClient()
-        return self._client
+        from src.core.gcp import gcp_clients
+
+        return gcp_clients.tasks_client
 
     def enqueue_task(
         self,

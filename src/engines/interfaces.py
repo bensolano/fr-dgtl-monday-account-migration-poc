@@ -126,3 +126,22 @@ class TaskQueueInterface(Protocol):
     ) -> None:
         """Enqueues a single task payload to the specified stage queue."""
         ...
+
+
+class GcpClientsInterface(Protocol):
+    """Protocol defining GCP clients initialization and retrieval."""
+
+    @property
+    def storage_client(self) -> Any: ...
+
+    @property
+    def secret_client(self) -> Any: ...
+
+    @property
+    def run_client(self) -> Any: ...
+
+    @property
+    def firestore_client(self) -> Any: ...
+
+    @property
+    def tasks_client(self) -> Any: ...

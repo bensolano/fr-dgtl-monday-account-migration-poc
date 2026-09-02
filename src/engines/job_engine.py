@@ -1,15 +1,15 @@
+import asyncio
 import datetime
 import json
 import logging
 from collections.abc import Callable
 from typing import Any
 
-from google.cloud import firestore, secretmanager, storage
-
 from src.core.config import settings
 from src.engines.interfaces import (
     ClassifierInterface,
     DiscovererInterface,
+    GcpClientsInterface,
     ReporterInterface,
     StateInterface,
 )
@@ -27,6 +27,7 @@ class JobEngine:
         classifier: ClassifierInterface,
         reporter: ReporterInterface,
         discovery_factory: Callable[[str], DiscovererInterface],
+        gcp_clients: GcpClientsInterface,
         state_manager: StateInterface | None = None,
         project_id: str | None = None,
         reports_bucket: str | None = None,
@@ -63,6 +64,7 @@ class JobEngine:
             classifier: An injected instance satisfying the ClassifierInterface.
             reporter: An injected instance satisfying the ReporterInterface.
             discovery_factory: A function that takes an API key and returns a Discoverer.
+            gcp_clients: An injected instance satisfying the GcpClientsInterface.
             state_manager: An injected instance satisfying the StateInterface.
             project_id: The GCP project ID. Defaults to env var PROJECT_ID.
             reports_bucket: The GCS bucket for reports. Defaults to env var REPORTS_BUCKET.
@@ -70,48 +72,29 @@ class JobEngine:
         self.classifier = classifier
         self.reporter = reporter
         self.discovery_factory = discovery_factory
+        self.gcp_clients = gcp_clients
         self.state_manager = state_manager
 
         self.project_id = project_id or settings.PROJECT_ID
         self.reports_bucket = reports_bucket or settings.REPORTS_BUCKET
 
-        # Lazy load clients to prevent multiprocessing/forking issues
-        self._db = None
-        self._storage_client = None
-        self._secret_client = None
-
     @property
     def db(self):
-        if self._db is None:
-            try:
-                self._db = firestore.Client(project=self.project_id)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Failed to initialize Firestore client: {e}")
-        return self._db
+        return self.gcp_clients.firestore_client
 
     @property
     def storage_client(self):
-        if self._storage_client is None:
-            try:
-                self._storage_client = storage.Client(project=self.project_id)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Failed to initialize Storage client: {e}")
-        return self._storage_client
+        return self.gcp_clients.storage_client
 
     @property
     def secret_client(self):
-        if self._secret_client is None:
-            try:
-                self._secret_client = secretmanager.SecretManagerServiceClient()
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Failed to initialize Secret Manager client: {e}")
-        return self._secret_client
+        return self.gcp_clients.secret_client
 
     def has_firestore(self) -> bool:
         """Checks if Firestore is initialized."""
         return self.db is not None
 
-    def set_job_status(
+    async def set_job_status(
         self,
         job_id: str,
         status: str,
@@ -151,9 +134,9 @@ class JobEngine:
         if error:
             update_data["error"] = error
 
-        doc_ref.set(update_data, merge=True)
+        await doc_ref.set(update_data, merge=True)
 
-    def get_job(self, job_id: str) -> dict[str, Any] | None:
+    async def get_job(self, job_id: str) -> dict[str, Any] | None:
         """
         Retrieves Firestore job status.
 
@@ -165,22 +148,22 @@ class JobEngine:
         """
         if self.state_manager:
             # Prefer using the injected StateInterface if provided to align with DIP
-            job = self.state_manager.get_job(job_id)
+            job = await self.state_manager.get_job(job_id)
             return job.model_dump() if job else None
 
         if not self.db:
             return None
 
-        doc = self.db.collection("jobs").document(job_id).get()
+        doc = await self.db.collection("jobs").document(job_id).get()
         if doc.exists:
             return doc.to_dict()
         return None
 
-    def cancel_job(self, job_id: str) -> None:
+    async def cancel_job(self, job_id: str) -> None:
         """Cancels a pending or running job."""
-        self.set_job_status(job_id, "CANCELLED")
+        await self.set_job_status(job_id, "CANCELLED")
 
-    def delete_job(self, job_id: str) -> None:
+    async def delete_job(self, job_id: str) -> None:
         """
         Deletes the job document and all its subcollections from Firestore.
         NOTE: GCP artifacts (secrets, GCS) should be deleted by the router.
@@ -194,7 +177,7 @@ class JobEngine:
         # In a real production app, you would also recursively delete subcollections
         # (e.g. inventory, dag_state, dead_letters).
         # For this prototype, deleting the root document prevents it from loading.
-        job_ref.delete()
+        await job_ref.delete()
         logger.info(f"Deleted job {job_id} from Firestore.")
 
     async def execute_discovery_job(self, job_id: str) -> None:
@@ -209,7 +192,7 @@ class JobEngine:
             RuntimeError: If dependencies like SecretManager fail to initialize.
         """
         logger.info(f"Starting discovery job execution for {job_id}")
-        self.set_job_status(job_id, "RUNNING")
+        await self.set_job_status(job_id, "RUNNING")
 
         try:
             # 1. Fetch API Key from Secret Manager
@@ -217,7 +200,7 @@ class JobEngine:
                 raise RuntimeError("Secret Manager client is not initialized.")
 
             secret_name = f"projects/{self.project_id}/secrets/job-{job_id}-source-key/versions/latest"
-            response = self.secret_client.access_secret_version(
+            response = await self.secret_client.access_secret_version(
                 request={"name": secret_name}
             )
             source_api_key = response.payload.data.decode("UTF-8")
@@ -261,34 +244,40 @@ class JobEngine:
 
             # Save classified inventory locally for upload
             local_classified_path = f"/tmp/{job_id}_classified_inventory.json"
-            with open(local_classified_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
+            with open(
+                local_classified_path, "w", encoding="utf-8"
+            ) as f:  # noqa: ASYNC230
                 json.dump(classified_inventory, f, indent=2)
 
             # 5. Upload to Cloud Storage
             report_gcs_path = None
             if self.storage_client:
-                bucket = self.storage_client.bucket(self.reports_bucket)
 
-                # Upload Report
-                report_blob_name = f"reports/{job_id}/pre_migration_report.md"
-                report_blob = bucket.blob(report_blob_name)
-                report_blob.upload_from_filename(local_report_path)
-                report_gcs_path = report_blob_name
-                logger.info(
-                    f"Uploaded report to GCS: gs://{self.reports_bucket}/{report_blob_name}"
-                )
+                def _upload_blobs():
+                    bucket = self.storage_client.bucket(self.reports_bucket)
 
-                # Upload Classified Inventory
-                inventory_blob_name = f"reports/{job_id}/inventory.json"
-                inventory_blob = bucket.blob(inventory_blob_name)
-                inventory_blob.upload_from_filename(local_classified_path)
-                logger.info(
-                    f"Uploaded inventory to GCS: gs://{self.reports_bucket}/{inventory_blob_name}"
-                )
+                    # Upload Report
+                    report_blob_name = f"reports/{job_id}/pre_migration_report.md"
+                    report_blob = bucket.blob(report_blob_name)
+                    report_blob.upload_from_filename(local_report_path)
+                    logger.info(
+                        f"Uploaded report to GCS: gs://{self.reports_bucket}/{report_blob_name}"
+                    )
 
-            self.set_job_status(job_id, "COMPLETED", report_path=report_gcs_path)
+                    # Upload Classified Inventory
+                    inventory_blob_name = f"reports/{job_id}/inventory.json"
+                    inventory_blob = bucket.blob(inventory_blob_name)
+                    inventory_blob.upload_from_filename(local_classified_path)
+                    logger.info(
+                        f"Uploaded inventory to GCS: gs://{self.reports_bucket}/{inventory_blob_name}"
+                    )
+                    return report_blob_name
+
+                report_gcs_path = await asyncio.to_thread(_upload_blobs)
+
+            await self.set_job_status(job_id, "COMPLETED", report_path=report_gcs_path)
             logger.info(f"Discovery job {job_id} completed successfully.")
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Discovery job {job_id} failed: {e}")
-            self.set_job_status(job_id, "FAILED", error=str(e))
+            await self.set_job_status(job_id, "FAILED", error=str(e))

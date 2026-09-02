@@ -83,7 +83,7 @@ async def handle_task(
     )
 
     # 1. Idempotency Check
-    existing_dest_id = state_manager.get_dest_id(job_id, entity_type, source_id)
+    existing_dest_id = await state_manager.get_dest_id(job_id, entity_type, source_id)
     if existing_dest_id:
         logger.info(
             f"Idempotency hit: {entity_type} {source_id} already exists as {existing_dest_id}. Bypassing."
@@ -92,7 +92,7 @@ async def handle_task(
 
     # 2. Proactive Rate Limiting (Token Bucket)
     estimated_cost = estimate_complexity(entity_type, entity_payload)
-    is_safe, retry_in = state_manager.consume_budget(job_id, estimated_cost)
+    is_safe, retry_in = await state_manager.consume_budget(job_id, estimated_cost)
     if not is_safe:
         logger.warning(
             f"Insufficient complexity budget ({estimated_cost} required) for {entity_type}. Re-enqueueing in {retry_in}s."
@@ -129,7 +129,7 @@ async def handle_task(
 
         # In local dev testing without SecretManager, we might want to bypass or error gracefully
         try:
-            dest_api_key = gcp.get_dest_api_key(job_id)
+            dest_api_key = await gcp.get_dest_api_key(job_id)
         except RuntimeError:
             dest_api_key = "MOCK_KEY_FOR_LOCAL_TESTING"
 
@@ -147,7 +147,7 @@ async def handle_task(
         # We assume the stage name corresponds closely to the entity_type ('board' -> 'boards')
         # This triggers the enqueue of the next stage if this was the last task.
         plural_stage = f"{entity_type}s"
-        is_stage_done = state_manager.mark_task_complete(job_id, plural_stage)
+        is_stage_done = await state_manager.mark_task_complete(job_id, plural_stage)
 
         if is_stage_done:
             logger.info(
@@ -188,12 +188,12 @@ async def handle_task(
             logger.error(
                 f"Task permanently failed after {MAX_RETRIES} retries. Moving to Dead Letter Queue."
             )
-            state_manager.save_dead_letter(job_id, stage, task, str(e))
+            await state_manager.save_dead_letter(job_id, stage, task, str(e))
 
             # CRITICAL: We must mark the task as "complete" in the stage counter even if it failed,
             # otherwise the DAG stage will never reach 100% and will hang forever.
             plural_stage = f"{entity_type}s"
-            is_stage_done = state_manager.mark_task_complete(job_id, plural_stage)
+            is_stage_done = await state_manager.mark_task_complete(job_id, plural_stage)
 
             if is_stage_done:
                 logger.info(

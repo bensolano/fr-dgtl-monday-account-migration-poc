@@ -46,7 +46,7 @@ async def create_job(
 
     # Secure API Keys in Secret Manager
     try:
-        gcp.store_job_secrets(job_id, request.source_api_key)
+        await gcp.store_job_secrets(job_id, request.source_api_key)
     except Exception as e:
         logger.error(f"Failed to store secrets in Secret Manager: {e}")
         raise HTTPException(
@@ -54,7 +54,7 @@ async def create_job(
         ) from e
 
     # Init state in Firestore
-    job_engine.set_job_status(job_id, "PENDING")
+    await job_engine.set_job_status(job_id, "PENDING")
 
     try:
         if settings.is_local:
@@ -64,7 +64,7 @@ async def create_job(
             background_tasks.add_task(job_engine.execute_discovery_job, job_id)
             msg = "Local background task started."
         else:
-            triggered = gcp.trigger_cloud_run_discovery_job(job_id)
+            triggered = await gcp.trigger_cloud_run_discovery_job(job_id)
             if triggered:
                 msg = "Cloud Run job triggered."
             else:
@@ -73,7 +73,7 @@ async def create_job(
                 msg = "Local background task started as fallback."
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to trigger Cloud Run Job for {job_id}: {e}")
-        job_engine.set_job_status(
+        await job_engine.set_job_status(
             job_id, "FAILED", error="Failed to start background job infrastructure."
         )
         msg = "Failed to start background job infrastructure."
@@ -103,7 +103,7 @@ async def get_job_status(
     Raises:
         HTTPException: If the job cannot be found in the datastore.
     """
-    job_data = job_engine.get_job(job_id)
+    job_data = await job_engine.get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -133,7 +133,7 @@ async def execute_job(
     Raises:
         HTTPException: If the job is not ready or the inventory cannot be found.
     """
-    job_data = job_engine.get_job(job_id)
+    job_data = await job_engine.get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -144,12 +144,12 @@ async def execute_job(
         )
 
     try:
-        gcp.store_dest_secret(job_id, request.dest_api_key)
-        inventory_data = gcp.get_inventory(job_id)
+        await gcp.store_dest_secret(job_id, request.dest_api_key)
+        inventory_data = await gcp.get_inventory(job_id)
 
         dag = orchestration.build_dag(inventory_data)
 
-        job_engine.set_job_status(job_id, "EXECUTING")
+        await job_engine.set_job_status(job_id, "EXECUTING")
 
         orchestration.enqueue_dag(job_id, dag)
 
@@ -160,7 +160,7 @@ async def execute_job(
 
     except Exception as e:
         logger.error(f"Failed to execute DAG for job {job_id}: {e}")
-        job_engine.set_job_status(job_id, "FAILED", error=str(e))
+        await job_engine.set_job_status(job_id, "FAILED", error=str(e))
         raise HTTPException(
             status_code=500, detail="Failed to start migration execution."
         ) from e
@@ -184,7 +184,7 @@ async def get_job_report(
     Raises:
         HTTPException: If the job is not completed, not found, or the report is missing.
     """
-    job_data = job_engine.get_job(job_id)
+    job_data = await job_engine.get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -216,7 +216,7 @@ async def get_job_report(
     try:
         # Attempt to generate a signed URL (Works in production with Service Account)
         try:
-            signed_url = gcp.get_report_signed_url(report_gcs_path)
+            signed_url = await gcp.get_report_signed_url(report_gcs_path)
             # Redirect the user's browser directly to the signed URL
             return RedirectResponse(url=signed_url)
         except Exception as signing_error:  # noqa: BLE001
@@ -226,7 +226,7 @@ async def get_job_report(
             # Fallback for local development using ADC token
             from fastapi.responses import Response
 
-            content = gcp.get_report_bytes(report_gcs_path)
+            content = await gcp.get_report_bytes(report_gcs_path)
             return Response(
                 content=content,
                 media_type="text/markdown",
@@ -263,11 +263,11 @@ async def cancel_job(
     job_engine: Annotated[JobEngine, Depends(get_job_engine)],
 ) -> Any:
     """Cancels a job that is currently pending or running."""
-    job_data = job_engine.get_job(job_id)
+    job_data = await job_engine.get_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    job_engine.cancel_job(job_id)
+    await job_engine.cancel_job(job_id)
     return {"status": "CANCELLED", "message": "Job cancelled successfully"}
 
 
@@ -277,7 +277,7 @@ async def delete_job(
     job_engine: Annotated[JobEngine, Depends(get_job_engine)],
 ) -> Any:
     """Deletes all artifacts, secrets, and Firestore state for a job."""
-    gcp.delete_job_secrets(job_id)
-    gcp.delete_gcs_artifacts(job_id)
-    job_engine.delete_job(job_id)
+    await gcp.delete_job_secrets(job_id)
+    await gcp.delete_gcs_artifacts(job_id)
+    await job_engine.delete_job(job_id)
     return {"status": "DELETED", "message": "Job deleted successfully"}
