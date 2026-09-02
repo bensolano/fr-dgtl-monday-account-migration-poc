@@ -88,6 +88,19 @@ async def handle_task(
         logger.info(
             f"Idempotency hit: {entity_type} {source_id} already exists as {existing_dest_id}. Bypassing."
         )
+
+        # CRITICAL: We must mark the task as complete in the stage counter even if skipped for idempotency.
+        # Otherwise the DAG stage will never reach 100% and will hang forever.
+        plural_stage = f"{entity_type}s"
+        is_stage_done = await state_manager.mark_task_complete(job_id, plural_stage)
+
+        if is_stage_done:
+            logger.info(
+                f"Stage '{plural_stage}' for job {job_id} is completely finished (via idempotency)!"
+            )
+            # Use the injected orchestration to trigger the next stage
+            await orchestration.enqueue_next_stage(job_id, current_stage=plural_stage)
+
         return TaskResponse(status="skipped", reason="idempotent")
 
     # 2. Proactive Rate Limiting (Token Bucket)

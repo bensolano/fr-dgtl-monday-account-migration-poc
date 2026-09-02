@@ -176,7 +176,7 @@
 - Continue with Phase 4 (Reporting & Ops).
 - Start implementing BigQuery `migration_events` table + live progress view.
 
-## 2026-09-02 - Async GCP Clients, Cloud Tasks Tunneling & Architecture Fixes
+## 2026-09-02 - Async Architecture & Execution Engine Fixes
 
 **Decisions Made:**
 
@@ -189,6 +189,9 @@
 - **Job Status Persistence:** Fully implemented the `update_job_status` interface pattern across the `StateInterface` and `StateManager` to respect SOLID principles. The `OrchestrationEngine` now properly signals DAG completion without requiring direct access to the `JobEngine` or Firestore SDK.
 - **Async I/O:** Fixed a blocking I/O warning (ASYNC230) in `job_engine.py` by deferring `json.dump` operations to `asyncio.to_thread`.
 - **Cloud Tasks Webhook Routing:** Clarified documentation regarding the FastAPI webhook routing design where Cloud Tasks targets `{service_url}/api/v1/worker/{stage}` to leverage the exact same Cloud Run service for both web and background processing.
+- **DAG Progression Fix:** Fixed a critical bug in `worker_routes.py` where a Cloud Task hitting the idempotency check would return early ('skipped') but fail to increment the DAG stage completion counter (`mark_task_complete`). This caused the orchestration engine to hang indefinitely, preventing the next stage (e.g., boards) from being enqueued.
+- **Token Bucket Unpacking Fix:** Fixed a bug in `StateManager.consume_budget` where a missing Firestore document (`snapshot.exists` == False) would cause the transaction function to fall through and return `None` instead of evaluating and initializing the token bucket. This manifested as a `TypeError: cannot unpack non-iterable NoneType object` in `worker_routes.py`.
+- **Async ExecutionEngine Fix:** Fixed several 'RuntimeWarning: coroutine was never awaited' and 'Object of type coroutine is not JSON serializable' errors in the worker routes. These occurred because the execution engine was missing `await` statements when calling `StateManager` methods (which had recently been refactored to be asynchronous) such as `get_dest_id`, `set_dest_id`, and `sync_budget`.
 
 **Current State:**
 
@@ -205,6 +208,9 @@
 - Implemented `update_job_status` in `StateManager` (`src/core/state.py`) to execute Firestore document updates.
 - Updated `OrchestrationEngine` to invoke `update_job_status` with `COMPLETED` when the final stage concludes.
 - Fixed `ASYNC230` in `JobEngine` by running file writes in a thread pool.
+- Updated `worker_routes.py` to ensure that `state_manager.mark_task_complete` is called even when a task is skipped due to idempotency.
+- Updated `src/core/state.py` by properly dedenting the token bucket evaluation logic so it executes regardless of whether the document initially existed.
+- Updated `src/engines/execution_engine.py` and `src/engines/interfaces.py` to properly define and await the `StateManager` interface methods.
 - Validated all 30 tests pass and linters (`ruff`) show no errors.
 
 **Next Up:**

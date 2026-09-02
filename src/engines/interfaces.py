@@ -61,47 +61,49 @@ class DiscovererInterface(Protocol):
 class StateInterface(Protocol):
     """Protocol defining state tracking, idempotency, and budget behavior."""
 
-    def get_job(self, job_id: str) -> JobDocument | None:
+    async def get_job(self, job_id: str) -> JobDocument | None:
         """Retrieves the state of a migration job."""
         ...
 
-    def get_dest_id(self, job_id: str, entity_type: str, source_id: str) -> str | None:
+    async def get_dest_id(
+        self, job_id: str, entity_type: str, source_id: str
+    ) -> str | None:
         """Retrieves the destination ID for a given source ID to ensure idempotency."""
         ...
 
-    def set_dest_id(
+    async def set_dest_id(
         self, job_id: str, entity_type: str, source_id: str, dest_id: str
     ) -> None:
         """Stores the destination ID mapped to the source ID for future idempotency checks."""
         ...
 
-    def consume_budget(
+    async def consume_budget(
         self, job_id: str, required_tokens: int = 50000
     ) -> tuple[bool, int]:
         """Proactively checks if the global token bucket has enough tokens and deducts them."""
         ...
 
-    def sync_budget(
+    async def sync_budget(
         self, job_id: str, actual_remaining: int, reset_in_seconds: int
     ) -> None:
         """Reactively syncs the token bucket with the exact numbers returned by Monday API."""
         ...
 
-    def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
+    async def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
         """Initializes the stage gating counters for a new DAG execution."""
         ...
 
-    def mark_task_complete(self, job_id: str, stage: str) -> bool:
+    async def mark_task_complete(self, job_id: str, stage: str) -> bool:
         """Increments the completion counter for a stage and returns True if fully complete."""
         ...
 
-    def save_dead_letter(
+    async def save_dead_letter(
         self, job_id: str, stage: str, task: TaskPayload, error_message: str
     ) -> None:
         """Saves a permanently failed task to the dead letter queue."""
         ...
 
-    def update_job_status(self, job_id: str, status: str) -> None:
+    async def update_job_status(self, job_id: str, status: str) -> None:
         """Updates the top-level status of the job."""
         ...
 

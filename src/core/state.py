@@ -167,27 +167,27 @@ class StateManager:
                     else:
                         last_reset = last_reset_val
 
-                # Delegate the math to the pure domain logic class (SRP)
-                if not self.rate_limiter:
-                    raise RuntimeError(
-                        "TokenBucketInterface dependency not injected into StateManager"
-                    )
-
-                result = self.rate_limiter.evaluate(
-                    current_tokens, last_reset, required_tokens
+            # Delegate the math to the pure domain logic class (SRP)
+            if not self.rate_limiter:
+                raise RuntimeError(
+                    "TokenBucketInterface dependency not injected into StateManager"
                 )
 
-                if result.allowed:
-                    # Deduct and allow
-                    transaction.set(
-                        ref,
-                        {
-                            "remaining_tokens": result.new_tokens,
-                            "last_reset": result.new_last_reset,
-                        },
-                    )
+            result = self.rate_limiter.evaluate(
+                current_tokens, last_reset, required_tokens
+            )
 
-                return result.allowed, result.retry_in
+            if result.allowed:
+                # Deduct and allow
+                transaction.set(
+                    ref,
+                    {
+                        "remaining_tokens": result.new_tokens,
+                        "last_reset": result.new_last_reset,
+                    },
+                )
+
+            return result.allowed, result.retry_in
 
         return await update_in_transaction(self.db.transaction(), bucket_ref)
 
