@@ -176,13 +176,16 @@
 - Continue with Phase 4 (Reporting & Ops).
 - Start implementing BigQuery `migration_events` table + live progress view.
 
-## 2026-09-02 - Async GCP Client Upgrade & Decoupling
+## 2026-09-02 - Async GCP Clients & Cloud Tasks Tunneling
 
 **Decisions Made:**
 
 - **Async GCP Clients:** Upgraded to official Async Google Cloud SDKs (`FirestoreAsyncClient`, `SecretManagerServiceAsyncClient`, `JobsAsyncClient`, `CloudTasksAsyncClient`) for high-throughput, non-blocking I/O.
 - **Storage Threading:** Wrapped synchronous `google.cloud.storage` calls in `asyncio.to_thread()` to prevent event loop blocking.
 - **SOLID Decoupling:** Introduced `GcpClientsInterface` injected via `dependencies.py` to remove inline imports and circular dependencies in `JobEngine` and `StateManager`.
+- **Remove Local asyncio Queue:** Deprecated and removed the `LocalTaskQueue` and in-memory background worker loop `local_queue.py` that simulated Cloud Tasks.
+- **Consistent Execution Context:** All environments (local and production) will now use `CloudTaskQueue` and dispatch directly to Google Cloud Tasks.
+- **Local Tunnels:** Local development will use tunneling tools (e.g. `ngrok`) set via the `SERVICE_URL` environment variable to receive webhooks from actual Cloud Tasks, providing higher fidelity parity between local testing and production execution.
 
 **Current State:**
 
@@ -191,6 +194,10 @@
 - Updated API routes (`job_routes.py`, `worker_routes.py`) to correctly `await` async engine methods.
 - Updated test suite (`test_job_engine.py`, `test_state.py`) to use `AsyncMock` for terminal operations, ensuring all 30 tests pass.
 - Verified local FastAPI execution without event loop hangs.
+- Deleted `src/core/local_queue.py`.
+- Removed `local_worker_loop` background tasks from the FastAPI lifespan in `src/api/main.py`.
+- Updated `get_task_queue()` in `src/core/task_deps.py` to unconditionally return `CloudTaskQueue`.
+- Updated `docs/08-local-vs-prod-architecture.md` and `docs/09-method-overview.md` to reflect the tunneling architecture.
 
 **Next Up:**
 

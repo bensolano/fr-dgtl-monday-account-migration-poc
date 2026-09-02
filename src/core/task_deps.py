@@ -3,7 +3,6 @@ import json
 import logging
 
 from src.core.config import settings
-from src.core.local_queue import LocalTaskQueue
 from src.core.schemas import MigrationDag, TaskPayload
 
 try:
@@ -162,13 +161,11 @@ class CloudTaskQueue:
         await self.client.create_task(request={"parent": parent, "task": task_def})
 
 
-def get_task_queue():
+def get_task_queue() -> CloudTaskQueue:
     """
     Dependency factory that returns the appropriate task queue implementation.
 
     Returns:
-        LocalTaskQueue | CloudTaskQueue: The task queue client depending on the environment.
+        CloudTaskQueue: The task queue client depending on the environment.
     """
-    if settings.is_local:
-        return LocalTaskQueue()
     return CloudTaskQueue()

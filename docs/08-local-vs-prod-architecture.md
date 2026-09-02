@@ -27,7 +27,7 @@ The third phase handles writing the discovered objects to the destination accoun
 
 ### Queueing & DAG Routing (Cloud Tasks)
 *   **Production (GCP):** The `OrchestrationEngine` parses the inventory into a strict DAG and dispatches the workloads as HTTP POST payloads into dedicated **Cloud Tasks Queues** (`migration-workspaces`, `migration-boards`, etc.). Cloud Tasks natively limits concurrency via `max_dispatches_per_second`.
-*   **Local Bypass:** To simulate Cloud Tasks locally without crashing the server or requiring a routable web URL, the local environment uses an **In-Memory Asynchronous Worker Pool**. Instead of dispatching HTTP POST requests, the mocked `CloudTaskQueue` drops `TaskPayload` objects into a bounded `asyncio.Queue`. A fixed pool of background worker tasks (tied to the FastAPI application lifecycle) polls this queue and calls the `handle_task` function directly. If a rate limit is hit locally, the worker sleeps (`await asyncio.sleep()`), perfectly simulating Cloud Tasks pausing the queue while preserving the serverless integrity of the production deployment.
+*   **Local Bypass:** To simulate and test the orchestrator locally, we continue using real Google Cloud Tasks. The local environment configures the `SERVICE_URL` environment variable via `.env` to point to a public tunnel (like `ngrok` or `localtunnel`). Cloud Tasks will dispatch HTTP POST requests directly to your local FastAPI server running the worker routes, ensuring local testing perfectly aligns with the real GCP infrastructure without mocking async execution.
 
 ### Rate Limiting (Token Bucket)
 *   **Both Environments:** Monday.com tracks "complexity points." We manage this via a transactional **Token Bucket** in Firestore (`jobs/{job_id}/state/complexity_bucket`). 
