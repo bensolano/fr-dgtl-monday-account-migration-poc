@@ -267,3 +267,21 @@
 **Next Up:**
 
 - Continue with Phase 4 (Reporting & Ops).
+
+## 2026-09-06 - Bug Fixes: Firestore Inventory & Column ID Collisions
+
+**Decisions Made:**
+
+- **Inventory Upserts:** Modified `update_inventory_status` in `firestore.py` to use `ref.set(..., merge=True)` instead of `ref.update(...)` to properly create inventory documents that don't yet exist.
+- **Board-Scoped IDs:** Modified `TaskPayload` generation for columns and groups to prepend the `parent_board_id` to the `source_id` (e.g., `123456_status`). Since Monday.com column and group IDs are only unique per board, this prevents collisions in the Firestore `id_map` and `inventory` collections when migrating multiple boards with similarly named columns or groups.
+- **Execution Scoping:** Updated the `create_item` mutation logic in `ExecutionService` to look up the scoped group IDs when mapping items to their destination groups.
+
+**Current State:**
+
+- Inventory items track correctly in Firestore.
+- Columns and groups with the same IDs across different boards no longer overwrite each other in state mapping.
+- All tests pass.
+
+**Next Up:**
+
+- Continue with Phase 4 (Reporting & Ops).

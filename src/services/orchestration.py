@@ -84,10 +84,16 @@ class OrchestrationService:
                     )
                     continue
 
+                source_id = str(entity.get("id"))
+                # Columns and Groups IDs are scoped to the board, not globally unique!
+                # We prefix them with the board ID to prevent collisions in id_map and inventory.
+                if stage in ["columns", "groups"] and "parent_board_id" in entity:
+                    source_id = f"{entity['parent_board_id']}_{source_id}"
+
                 # Build standard task payload
                 task = TaskPayload(
                     entity_type=stage.rstrip("s"),
-                    source_id=str(entity.get("id")),
+                    source_id=source_id,
                     payload=entity,
                 )
                 getattr(dag, stage).append(task)

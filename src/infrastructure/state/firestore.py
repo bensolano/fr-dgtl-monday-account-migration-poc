@@ -81,7 +81,7 @@ class StateManager:
             updates["error_message"] = error_message
 
         try:
-            await ref.update(updates)
+            await ref.set(updates, merge=True)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to update inventory status for {object_id}: {e}")
 

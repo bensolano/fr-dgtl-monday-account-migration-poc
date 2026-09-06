@@ -213,8 +213,9 @@ class ExecutionService:
         }
         """
         if source_group_id:
+            scoped_group_id = f"{source_board_id}_{source_group_id}"
             dest_group_id = await self.state_manager.get_dest_id(
-                self.job_id, "group", source_group_id
+                self.job_id, "group", scoped_group_id
             )
             if dest_group_id:
                 variables["groupId"] = dest_group_id
