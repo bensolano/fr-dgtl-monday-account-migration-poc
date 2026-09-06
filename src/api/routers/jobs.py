@@ -304,9 +304,15 @@ async def stream_inventory(
         raise HTTPException(status_code=404, detail="Job not found")
 
     # The async Python Firestore client (AsyncClient) does not support on_snapshot (raises NotImplementedError).
+    from src.infrastructure.gcp.services import gcp_clients
+
     # We must instantiate a synchronous client specifically for this SSE endpoint.
     # The sync client's on_snapshot creates a background gRPC thread which won't block our async event loop.
-    sync_db = firestore.Client(project=settings.PROJECT_ID)
+    # Pass the cached credentials to prevent blocking subprocess calls to gcloud that deadlock the event loop.
+    sync_db = firestore.Client(
+        project=settings.PROJECT_ID,
+        credentials=gcp_clients.credentials,
+    )
 
     # We use an asyncio.Queue to bridge the sync Firestore callback to our async generator.
     queue = asyncio.Queue()

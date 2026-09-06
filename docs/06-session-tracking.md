@@ -251,3 +251,19 @@
 
 **Next Up:**
 - Continue Phase 4 Reporting (BigQuery schema generation).
+
+## 2026-09-06 - Bug Fixes: gRPC Fork Deadlock in SSE Endpoint
+
+**Decisions Made:**
+
+- Fixed a blocking event loop issue in the /stream SSE endpoint caused by initializing a synchronous Firestore client without credentials. The default credential fetching process called subprocess, causing a fork while async gRPC threads were active, resulting in a deadlock.
+- Explicitly passed cached credentials from gcp_clients to the synchronous firestore.Client to bypass the subprocess call and avoid the fork deadlock.
+
+**Current State:**
+
+- The /stream SSE endpoint now works correctly and no longer hangs on connecting to stream when /execute is called concurrently.
+- All tests pass.
+
+**Next Up:**
+
+- Continue with Phase 4 (Reporting & Ops).
