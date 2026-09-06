@@ -81,11 +81,19 @@ async def handle_task(
         f"Worker received {stage} task: Job {job_id} | Type {entity_type} | Source ID {source_id} | Payload Size: {len(str(entity_payload))} bytes"
     )
 
+    # 0. Mark task as processing in real-time UI tracker
+    await state_manager.update_inventory_status(job_id, source_id, status="processing")
+
     # 1. Idempotency Check
     existing_dest_id = await state_manager.get_dest_id(job_id, entity_type, source_id)
     if existing_dest_id:
         logger.info(
             f"Idempotency hit: {entity_type} {source_id} already exists as {existing_dest_id}. Bypassing."
+        )
+
+        # Update real-time UI tracking for idempotent success
+        await state_manager.update_inventory_status(
+            job_id, source_id, status="success", dest_id=existing_dest_id
         )
 
         # CRITICAL: We must mark the task as complete in the stage counter even if skipped for idempotency.
@@ -109,6 +117,9 @@ async def handle_task(
         logger.warning(
             f"Insufficient complexity budget ({estimated_cost} required) for {entity_type}. Re-enqueueing in {retry_in}s."
         )
+        # Revert UI status back to pending since we are requeueing
+        await state_manager.update_inventory_status(job_id, source_id, status="pending")
+
         import time
 
         schedule_time = time.time() + retry_in
@@ -155,6 +166,11 @@ async def handle_task(
             f"Successfully executed mutation for {entity_type} {source_id}. Created {dest_id}."
         )
 
+        # Update real-time UI tracking for success
+        await state_manager.update_inventory_status(
+            job_id, source_id, status="success", dest_id=str(dest_id)
+        )
+
         # 4. Stage Gating (DAG state decrement)
         # We assume the stage name corresponds closely to the entity_type ('board' -> 'boards')
         # This triggers the enqueue of the next stage if this was the last task.
@@ -174,6 +190,9 @@ async def handle_task(
         logger.warning(
             f"Rate limit hit during execution for {entity_type} {source_id}: {e}"
         )
+        # Revert UI status back to pending since we are requeueing
+        await state_manager.update_inventory_status(job_id, source_id, status="pending")
+
         import time
 
         schedule_time = time.time() + e.retry_in_seconds
@@ -190,6 +209,10 @@ async def handle_task(
             logger.info(
                 f"Retrying task (attempt {task.retry_count}/{MAX_RETRIES}) for {entity_type} {source_id}"
             )
+            # Leave status as processing or change back to pending. Let's revert to pending
+            await state_manager.update_inventory_status(
+                job_id, source_id, status="pending"
+            )
 
             schedule_time = time_utils.calculate_exponential_backoff(task.retry_count)
             await orchestration.task_queue.enqueue_task(
@@ -201,6 +224,11 @@ async def handle_task(
                 f"Task permanently failed after {MAX_RETRIES} retries. Moving to Dead Letter Queue."
             )
             await state_manager.save_dead_letter(job_id, stage, task, str(e))
+
+            # Update real-time UI tracking for error
+            await state_manager.update_inventory_status(
+                job_id, source_id, status="error", error_message=str(e)
+            )
 
             # CRITICAL: We must mark the task as "complete" in the stage counter even if it failed,
             # otherwise the DAG stage will never reach 100% and will hang forever.

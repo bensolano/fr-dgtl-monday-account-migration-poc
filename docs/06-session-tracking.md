@@ -231,3 +231,19 @@
 
 **Next Up:**
 - Phase 4 (Reporting & Ops).
+
+## 2026-09-06 - Real-Time UI Tracking via Firestore
+
+**Decisions Made:**
+- **Real-Time UI Tracking:** Instead of querying BigQuery for real-time progress, which is slow and expensive, we will enrich the existing `jobs/{job_id}/inventory/{object_id}` Firestore subcollection with real-time status fields (`migration_status`, `dest_id`, `error_message`). 
+- **Firestore over BigQuery for UI:** The frontend will use Firestore `onSnapshot` listeners to subscribe to these inventory document changes, providing a visually responsive real-time dashboard without complex joins.
+
+**Current State:**
+- Updated `docs/04-data-models-and-schemas.md` to include UI tracking fields (`migration_status`, `dest_id`, `error_message`, `updated_at`) in the `inventory` schema.
+- Added `update_inventory_status` to `StateManager` in `src/infrastructure/state/firestore.py`.
+- Updated the FastAPI worker endpoint in `src/api/routers/workers.py` to invoke `update_inventory_status` throughout the execution lifecycle (`processing`, `success`, `error`, `pending` [on rate limit/transient error]).
+- Fixed `BLE001` ruff linting issue in the new Firestore update method.
+
+**Next Up:**
+- Update frontend React application to consume the new Firestore fields via `onSnapshot` for live status visualization.
+- Continue Phase 4 Reporting (BigQuery schema generation).

@@ -56,8 +56,8 @@
       `reset_in_x_seconds`; dead-letter queue after N attempts.
 
 ## Phase 4 — Reporting & Ops
-- [ ] BigQuery `migration_events` table + Looker Studio (or in-portal)
-      live progress view.
+- [x] Firestore `inventory` subcollection enriched with real-time UI tracking fields (`migration_status`, `dest_id`, `error_message`) for in-portal live progress view.
+- [ ] BigQuery `migration_events` table for final reporting.
 - [ ] Final report generator (actuals vs. plan): migrated / failed /
       manual-only, in the same format as the pre-migration report.
 - [ ] Cloud Scheduler job to purge expired secrets/state.

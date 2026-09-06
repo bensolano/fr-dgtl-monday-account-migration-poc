@@ -42,6 +42,49 @@ class StateManager:
             return self._db
         return self.gcp_clients.firestore_client
 
+    async def update_inventory_status(
+        self,
+        job_id: str,
+        object_id: str,
+        status: str,
+        dest_id: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """
+        Updates the real-time tracking status of an item in the inventory subcollection.
+        This provides the live data for the UI dashboard.
+
+        Args:
+            job_id (str): The current job ID.
+            object_id (str): The original ID of the object being migrated.
+            status (str): The migration status (pending, processing, success, error).
+            dest_id (str | None): The new ID in the destination account if successful.
+            error_message (str | None): The failure reason if an error occurred.
+        """
+        if not self.db:
+            return
+
+        ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("inventory")
+            .document(object_id)
+        )
+
+        updates = {
+            "migration_status": status,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+        if dest_id is not None:
+            updates["dest_id"] = dest_id
+        if error_message is not None:
+            updates["error_message"] = error_message
+
+        try:
+            await ref.update(updates)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to update inventory status for {object_id}: {e}")
+
     async def get_job(self, job_id: str) -> JobDocument | None:
         """
         Retrieves the state of a migration job.

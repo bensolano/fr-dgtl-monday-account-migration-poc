@@ -84,7 +84,13 @@ erDiagram
   classification: "full" | "partial" | "manual_only",
   caveat: string | null,
   estimated_complexity_cost: number,
-  included_in_scope: boolean   // set after operator confirms scope
+  included_in_scope: boolean,  // set after operator confirms scope
+  
+  // Real-time UI tracking fields
+  migration_status: "pending" | "processing" | "success" | "error",
+  dest_id: string | null,
+  error_message: string | null,
+  updated_at: timestamp
 }
 ```
 
