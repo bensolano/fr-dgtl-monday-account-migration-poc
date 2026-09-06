@@ -1,0 +1,78 @@
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class SecretRef(BaseModel):
+    secret_ref: str
+
+
+class JobDocument(BaseModel):
+    job_id: str
+    status: str
+    operator_email: str
+    source_account: SecretRef
+    dest_account: SecretRef
+    created_at: datetime | None = None
+    expires_at: datetime | None = None
+
+
+class TaskPayload(BaseModel):
+    entity_type: str
+    source_id: str
+    payload: dict[str, Any]
+    retry_count: int = Field(default=0)
+
+
+class DeadLetterDocument(BaseModel):
+    stage: str
+    task: TaskPayload
+    error: str
+    failed_at: datetime | None = None
+
+
+class MigrationDag(BaseModel):
+    workspaces: list[TaskPayload] = Field(default_factory=list)
+    boards: list[TaskPayload] = Field(default_factory=list)
+    groups: list[TaskPayload] = Field(default_factory=list)
+    columns: list[TaskPayload] = Field(default_factory=list)
+    items: list[TaskPayload] = Field(default_factory=list)
+
+
+class WorkerTaskRequest(BaseModel):
+    job_id: str
+    task: TaskPayload
+
+
+from pydantic import BaseModel
+
+
+class JobCreateRequest(BaseModel):
+    source_api_key: str
+
+
+class ExecuteJobRequest(BaseModel):
+    dest_api_key: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str  # PENDING, RUNNING, COMPLETED, FAILED
+
+
+class JobCreateResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+
+
+class ExecuteJobResponse(BaseModel):
+    status: str
+    message: str
+
+
+class TaskResponse(BaseModel):
+    status: str
+    reason: str | None = None
+    dest_id: str | None = None

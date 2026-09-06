@@ -71,16 +71,16 @@
 - Restructured directories, extracted job execution logic, and added missing `get_job` function in `job_engine`.
 - Added fallback logic to proxy report downloads when local signed URL generation fails.
 - Set up dedicated Cloud Run Job image with correct entrypoint.
-- Implemented Firestore-backed `StateManager` (`src/core/state.py`) to manage idempotency mappings (`get_dest_id`, `set_dest_id`) before execution.
-- Implemented `OrchestrationEngine` (`src/engines/orchestration_engine.py`) to parse classified inventories into a staged DAG, properly filtering out `manual_only` tasks and enforcing execution order.
+- Implemented Firestore-backed `StateManager` (`src/infrastructure/state.py`) to manage idempotency mappings (`get_dest_id`, `set_dest_id`) before execution.
+- Implemented `OrchestrationService` (`src/services/orchestration_engine.py`) to parse classified inventories into a staged DAG, properly filtering out `manual_only` tasks and enforcing execution order.
 - Updated `terraform/main.tf` to provision dedicated Cloud Tasks queues for Phase 3 Execution (Workspaces, Boards, Groups, Columns, Items).
-- Added `google-cloud-tasks` client library and updated `OrchestrationEngine.enqueue_dag` to push the first stage of valid items directly to GCP queues.
-- Implemented FastAPI worker endpoints (`src/api/worker_routes.py`) to receive Cloud Tasks payloads and execute the required idempotency checks via `StateManager`.
+- Added `google-cloud-tasks` client library and updated `OrchestrationService.enqueue_dag` to push the first stage of valid items directly to GCP queues.
+- Implemented FastAPI worker endpoints (`src/api/routers/workers.py`) to receive Cloud Tasks payloads and execute the required idempotency checks via `StateManager`.
 - Refactored FastAPI route structure to separate concerns: `job_routes.py` for Discovery triggers and `worker_routes.py` for DAG execution, orchestrated by `src/api/main.py`.
 - Implemented `TokenBucket` proactive rate limiting in `StateManager` using Firestore transactions.
 - Modified `MondayClient._execute_query_with_retries` to support `distributed=True`, returning complexity metadata and raising `MondayRateLimitError` to leverage Cloud Tasks native backoff instead of localized `asyncio.sleep`.
-- Implemented `ExecutionEngine` (`src/engines/execution_engine.py`) to map source payloads (workspaces, boards, groups, columns, items) into explicit Monday.com GraphQL creation mutations.
-- Updated FastAPI worker routes (`src/api/worker_routes.py`) to fetch the `dest_api_key` securely, instantiate the `ExecutionEngine`, and sync complexity budgets post-execution.
+- Implemented `ExecutionService` (`src/services/execution.py`) to map source payloads (workspaces, boards, groups, columns, items) into explicit Monday.com GraphQL creation mutations.
+- Updated FastAPI worker routes (`src/api/routers/workers.py`) to fetch the `dest_api_key` securely, instantiate the `ExecutionService`, and sync complexity budgets post-execution.
 - Implemented Stage Gating in `StateManager` using Firestore transactions (`initialize_dag_state`, `mark_task_complete`). The orchestration seeds the task counters per stage, and worker routes decrement them upon success, firing an event when a stage hits zero to continue DAG execution.
 - Added `POST /api/v1/jobs/{job_id}/execute` to `job_routes.py` to formally trigger Phase 3 Execution. This reads the saved `inventory.json` from GCS, builds the DAG, saves it to `dag.json`, and enqueues the first valid stage to Cloud Tasks.
 - Wired up the stage gating cascade in `worker_routes.py` so that finishing the final task of a stage pulls the DAG and dynamically enqueues the next stage sequentially.
@@ -95,9 +95,9 @@
 **Decisions Made:**
 
 - **API Layer:** Fixed a Pydantic schema generation error in FastAPI for endpoints returning non-JSON responses (`RedirectResponse`, `Response`), and audited all API routes to ensure they return Pydantic schema-friendly models.
-- **Thin Controllers:** Enforced "thin controllers" by moving all GCP client initialization and business logic (Secret Manager, Cloud Run, Cloud Storage) out of the FastAPI routers and into a dedicated `src/core/gcp.py` module.
+- **Thin Controllers:** Enforced "thin controllers" by moving all GCP client initialization and business logic (Secret Manager, Cloud Run, Cloud Storage) out of the FastAPI routers and into a dedicated `src/infrastructure/gcp.py` module.
 - **Dependency Injection:** Enforced the use of FastAPI Dependency Injection (`Annotated[ClassName, Depends()]`) for all business engines instead of module-level global state, updating `GEMINI.md` to reflect this architectural rule.
-- **Data Models:** Replaced untyped `dict[str, Any]` payloads throughout the core engines (`OrchestrationEngine`, `StateManager`, `TaskDeps`) with strict Pydantic models to enforce type safety and validation.
+- **Data Models:** Replaced untyped `dict[str, Any]` payloads throughout the core engines (`OrchestrationService`, `StateManager`, `TaskDeps`) with strict Pydantic models to enforce type safety and validation.
 - **Documentation:** Formalized the mental model of the DAG in `docs/04-data-models-and-schemas.md` as a strict sequential pipeline (`workspaces` -> `boards` -> `groups` -> `columns` -> `items`) gated by completion counters, rather than a graph of individual task-level dependencies.
 - **FastAPI Routing:** Removed the "dynamic composition root" workaround in `worker_routes.py` and replaced the raw `Request` injection with a validated `WorkerTaskRequest` Pydantic model.
 
@@ -107,19 +107,19 @@
 - Created `ExecuteJobResponse` and `TaskResponse` models in `src/api/models.py`.
 - Updated `execute_job` (in `job_routes.py`) and `handle_task` (in `worker_routes.py`) to use the newly created Pydantic models.
 - Replaced explicit `JSONResponse` returns with `HTTPException` raises (e.g., status 429) in `handle_task` to comply with static typing.
-- Created `src/core/gcp.py` containing `GCPClients` singleton and utility methods (`store_job_secrets`, `get_dest_api_key`, `trigger_cloud_run_discovery_job`, `get_inventory`, etc.).
-- Refactored `src/api/job_routes.py` and `src/api/worker_routes.py` to strip out raw GCP SDK logic in favor of `src.core.gcp`.
-- Refactored `job_routes.py` and `worker_routes.py` to inject `JobEngine`, `StateManager`, and `OrchestrationEngine` directly into endpoints via `Depends()`.
-- Created `src/core/schemas.py` containing `MigrationDag`, `TaskPayload`, `JobDocument`, and `WorkerTaskRequest`.
-- Refactored `src/engines/interfaces.py` to type hint the new Pydantic models.
-- Updated `OrchestrationEngine` to construct and return a `MigrationDag` object.
+- Created `src/infrastructure/gcp.py` containing `GCPClients` singleton and utility methods (`store_job_secrets`, `get_dest_api_key`, `trigger_cloud_run_discovery_job`, `get_inventory`, etc.).
+- Refactored `src/api/routers/jobs.py` and `src/api/routers/workers.py` to strip out raw GCP SDK logic in favor of `src.infrastructure.gcp.services`.
+- Refactored `job_routes.py` and `worker_routes.py` to inject `JobService`, `StateManager`, and `OrchestrationService` directly into endpoints via `Depends()`.
+- Created `src/infrastructure/schemas.py` containing `MigrationDag`, `TaskPayload`, `JobDocument`, and `WorkerTaskRequest`.
+- Refactored `src/services/interfaces.py` to type hint the new Pydantic models.
+- Updated `OrchestrationService` to construct and return a `MigrationDag` object.
 - Updated `StateManager` to parse job documents into `JobDocument` and process `MigrationDag` objects.
 - Updated `CloudTaskQueue` and `GCSDagStorage` in `task_deps.py` to serialize/deserialize Pydantic models via `.model_dump_json()` and `.model_validate_json()`.
 - Refactored `worker_routes.py` `handle_task` endpoint to accept `WorkerTaskRequest`, removing manual JSON parsing.
 - Fixed unit tests in `test_state.py` and `test_orchestration_engine.py` to accommodate object attribute access instead of dictionary bracket notation.
 - Updated `docs/04-data-models-and-schemas.md` to accurately reflect the DAG stage gating architecture and the updated Cloud Tasks payload shape.
 - Added Mermaid diagrams to `docs/02-architecture.md` (Architecture Flow) and `docs/04-data-models-and-schemas.md` (ERD and Pipeline DAG) to visually represent the data flows and models.
-- Fixed a `TypeError` in the Cloud Run job entrypoint (`main.py`) by properly injecting dependencies into `JobEngine`.
+- Fixed a `TypeError` in the Cloud Run job entrypoint (`main.py`) by properly injecting dependencies into `JobService`.
 - Verified that all tests and linters pass.
 
 **Next Up:**
@@ -142,31 +142,31 @@
 
 **Current State:**
 
-- Updated `CloudTaskQueue.enqueue_task` in `src/core/task_deps.py` to accept `schedule_time` (converting it into `timestamp_pb2` payload).
-- Implemented `LocalTaskQueue` and `local_worker_loop` in `src/core/local_queue.py` backed by `asyncio.Queue` and `httpx`.
+- Updated `CloudTaskQueue.enqueue_task` in `src/infrastructure/task_deps.py` to accept `schedule_time` (converting it into `timestamp_pb2` payload).
+- Implemented `LocalTaskQueue` and `local_worker_loop` in `src/infrastructure/local_queue.py` backed by `asyncio.Queue` and `httpx`.
 - Tied the `local_worker_loop` to the FastAPI application startup via `@asynccontextmanager` lifespan in `src/api/main.py`.
-- Added `get_task_queue()` factory to `src/core/task_deps.py` and modified `worker_routes.py` and `job_routes.py` dependency providers to use it dynamically based on the `K_SERVICE` environment variable.
-- Updated `StateManager.consume_budget()` in `src/core/state.py` to return a tuple `(bool, int)` supplying the exact `retry_in` delay in seconds when a budget check fails.
+- Added `get_task_queue()` factory to `src/infrastructure/task_deps.py` and modified `worker_routes.py` and `job_routes.py` dependency providers to use it dynamically based on the `K_SERVICE` environment variable.
+- Updated `StateManager.consume_budget()` in `src/infrastructure/state.py` to return a tuple `(bool, int)` supplying the exact `retry_in` delay in seconds when a budget check fails.
 - Modified the `handle_task` endpoint in `worker_routes.py` to catch `MondayRateLimitError` and budget-exhaustion states by computing a future `schedule_time`, re-enqueueing the task via `orchestration.task_queue.enqueue_task`, and returning a 200 `skipped` response.
 - Modified `TaskPayload` schema to include `retry_count`.
 - Added `save_dead_letter` method to `StateManager`.
 - Modified `handle_task` to catch general exceptions, retry up to 3 times with exponential backoff, and ultimately route permanent failures to the DLQ in Firestore.
 - Updated `LocalTaskQueue` to drop `500` errors instead of infinite looping, deferring to the new application-level retry logic.
 - Updated `docs/03-implementation-roadmap.md` to check off Phase 3 retry policy constraints since exact re-enqueue delays and DLQ are fully implemented.
-- **CLEAN Architecture Refactor:** Extracted the mathematical logic for the Token Bucket into a pure `TokenBucketRateLimiter` class (SRP) in `src/core/rate_limit.py` and extracted time calculations into `src/core/time_utils.py`.
-- **Dependency Inversion (DIP):** Removed all inline instantiations of the `StateManager` and rate limiter. `ExecutionEngine` and `JobEngine` now strictly rely on `StateInterface`. `StateManager` now accepts `TokenBucketInterface` as an injected dependency, natively wired via FastAPI's composition root in `job_routes.py` and `worker_routes.py`.
+- **CLEAN Architecture Refactor:** Extracted the mathematical logic for the Token Bucket into a pure `TokenBucketRateLimiter` class (SRP) in `src/infrastructure/rate_limit.py` and extracted time calculations into `src/infrastructure/time_utils.py`.
+- **Dependency Inversion (DIP):** Removed all inline instantiations of the `StateManager` and rate limiter. `ExecutionService` and `JobService` now strictly rely on `StateInterface`. `StateManager` now accepts `TokenBucketInterface` as an injected dependency, natively wired via FastAPI's composition root in `job_routes.py` and `worker_routes.py`.
 - Updated `JobCreateRequest` to only require `source_api_key`.
 - Added `ExecuteJobRequest` expecting `dest_api_key` to `POST /jobs/{job_id}/execute`.
 - Created `DELETE /jobs/{job_id}` endpoint to purge Firestore documents, Secret Manager keys, and GCS artifacts.
 - Created `POST /jobs/{job_id}/cancel` endpoint to halt job pipelines via state transition to `CANCELLED`.
-- Refactored `src/core/gcp.py` to cleanly split `store_dest_secret` and handle deep artifact deletion.
-- Appended the static capability matrix appendix to `ReportEngine.generate_markdown_report`.
+- Refactored `src/infrastructure/gcp.py` to cleanly split `store_dest_secret` and handle deep artifact deletion.
+- Appended the static capability matrix appendix to `ReportService.generate_markdown_report`.
 - Completely overhauled `frontend/src/App.tsx` and `App.css` to introduce the explicit step-by-step workflow, capability component, and danger actions.
 - Checked off "Explicit consent UI" in the roadmap.
-- Refactored `GCPClients` singleton in `src/core/gcp.py` to instantiate clients lazily.
-- Refactored `JobEngine` in `src/engines/job_engine.py` to use `@property` accessors for `db`, `storage_client`, and `secret_client`.
-- Refactored `StateManager` in `src/core/state.py` to instantiate `firestore.Client` lazily to avoid socket duplication upon FastAPI injection.
-- Refactored `GCSDagStorage` and `CloudTaskQueue` in `src/core/task_deps.py` to instantiate `storage.Client` and `tasks_v2.CloudTasksClient` lazily, preventing per-request gRPC connection overhead.
+- Refactored `GCPClients` singleton in `src/infrastructure/gcp.py` to instantiate clients lazily.
+- Refactored `JobService` in `src/services/job_engine.py` to use `@property` accessors for `db`, `storage_client`, and `secret_client`.
+- Refactored `StateManager` in `src/infrastructure/state.py` to instantiate `firestore.Client` lazily to avoid socket duplication upon FastAPI injection.
+- Refactored `GCSDagStorage` and `CloudTaskQueue` in `src/infrastructure/task_deps.py` to instantiate `storage.Client` and `tasks_v2.CloudTasksClient` lazily, preventing per-request gRPC connection overhead.
 - Fixed a `ValidationError` in `job_engine.py` by ensuring `set_job_status("PENDING")` writes the fully valid `JobDocument` schema (with placeholder accounts) to Firestore on initialization.
 - Fixed a 404 error during local development when retrieving the report by implementing a fallback to `/tmp/{job_id}_report.md` in the `/api/v1/jobs/{job_id}/report` route when GCS paths are missing or unreachable.
 - Updated unit tests (`test_state.py`) to correctly trigger and test the new lazy evaluation properties.
@@ -182,38 +182,52 @@
 
 - **Async GCP Clients:** Upgraded to official Async Google Cloud SDKs (`FirestoreAsyncClient`, `SecretManagerServiceAsyncClient`, `JobsAsyncClient`, `CloudTasksAsyncClient`) for high-throughput, non-blocking I/O.
 - **Storage Threading:** Wrapped synchronous `google.cloud.storage` calls in `asyncio.to_thread()` to prevent event loop blocking.
-- **SOLID Decoupling:** Introduced `GcpClientsInterface` injected via `dependencies.py` to remove inline imports and circular dependencies in `JobEngine` and `StateManager`.
+- **SOLID Decoupling:** Introduced `GcpClientsInterface` injected via `dependencies.py` to remove inline imports and circular dependencies in `JobService` and `StateManager`.
 - **Remove Local asyncio Queue:** Deprecated and removed the `LocalTaskQueue` and in-memory background worker loop `local_queue.py` that simulated Cloud Tasks.
 - **Consistent Execution Context:** All environments (local and production) will now use `CloudTaskQueue` and dispatch directly to Google Cloud Tasks.
 - **Local Tunnels:** Local development will use tunneling tools (e.g. `ngrok`) set via the `SERVICE_URL` environment variable to receive webhooks from actual Cloud Tasks, providing higher fidelity parity between local testing and production execution.
-- **Job Status Persistence:** Fully implemented the `update_job_status` interface pattern across the `StateInterface` and `StateManager` to respect SOLID principles. The `OrchestrationEngine` now properly signals DAG completion without requiring direct access to the `JobEngine` or Firestore SDK.
+- **Job Status Persistence:** Fully implemented the `update_job_status` interface pattern across the `StateInterface` and `StateManager` to respect SOLID principles. The `OrchestrationService` now properly signals DAG completion without requiring direct access to the `JobService` or Firestore SDK.
 - **Async I/O:** Fixed a blocking I/O warning (ASYNC230) in `job_engine.py` by deferring `json.dump` operations to `asyncio.to_thread`.
 - **Cloud Tasks Webhook Routing:** Clarified documentation regarding the FastAPI webhook routing design where Cloud Tasks targets `{service_url}/api/v1/worker/{stage}` to leverage the exact same Cloud Run service for both web and background processing.
 - **DAG Progression Fix:** Fixed a critical bug in `worker_routes.py` where a Cloud Task hitting the idempotency check would return early ('skipped') but fail to increment the DAG stage completion counter (`mark_task_complete`). This caused the orchestration engine to hang indefinitely, preventing the next stage (e.g., boards) from being enqueued.
 - **Token Bucket Unpacking Fix:** Fixed a bug in `StateManager.consume_budget` where a missing Firestore document (`snapshot.exists` == False) would cause the transaction function to fall through and return `None` instead of evaluating and initializing the token bucket. This manifested as a `TypeError: cannot unpack non-iterable NoneType object` in `worker_routes.py`.
-- **Async ExecutionEngine Fix:** Fixed several 'RuntimeWarning: coroutine was never awaited' and 'Object of type coroutine is not JSON serializable' errors in the worker routes. These occurred because the execution engine was missing `await` statements when calling `StateManager` methods (which had recently been refactored to be asynchronous) such as `get_dest_id`, `set_dest_id`, and `sync_budget`.
+- **Async ExecutionService Fix:** Fixed several 'RuntimeWarning: coroutine was never awaited' and 'Object of type coroutine is not JSON serializable' errors in the worker routes. These occurred because the execution engine was missing `await` statements when calling `StateManager` methods (which had recently been refactored to be asynchronous) such as `get_dest_id`, `set_dest_id`, and `sync_budget`.
 
 **Current State:**
 
-- Refactored `src/core/gcp.py` to expose async clients.
-- Updated `StateManager` and `JobEngine` to `await` all datastore/infrastructure calls.
+- Refactored `src/infrastructure/gcp.py` to expose async clients.
+- Updated `StateManager` and `JobService` to `await` all datastore/infrastructure calls.
 - Updated API routes (`job_routes.py`, `worker_routes.py`) to correctly `await` async engine methods.
 - Updated test suite (`test_job_engine.py`, `test_state.py`) to use `AsyncMock` for terminal operations, ensuring all 30 tests pass.
 - Verified local FastAPI execution without event loop hangs.
-- Deleted `src/core/local_queue.py`.
+- Deleted `src/infrastructure/local_queue.py`.
 - Removed `local_worker_loop` background tasks from the FastAPI lifespan in `src/api/main.py`.
-- Updated `get_task_queue()` in `src/core/task_deps.py` to unconditionally return `CloudTaskQueue`.
+- Updated `get_task_queue()` in `src/infrastructure/task_deps.py` to unconditionally return `CloudTaskQueue`.
 - Updated `docs/08-local-vs-prod-architecture.md` and `docs/09-method-overview.md` to reflect the tunneling architecture.
-- Added `update_job_status` to `StateInterface` (`src/engines/interfaces.py`).
-- Implemented `update_job_status` in `StateManager` (`src/core/state.py`) to execute Firestore document updates.
-- Updated `OrchestrationEngine` to invoke `update_job_status` with `COMPLETED` when the final stage concludes.
-- Fixed `ASYNC230` in `JobEngine` by running file writes in a thread pool.
+- Added `update_job_status` to `StateInterface` (`src/services/interfaces.py`).
+- Implemented `update_job_status` in `StateManager` (`src/infrastructure/state.py`) to execute Firestore document updates.
+- Updated `OrchestrationService` to invoke `update_job_status` with `COMPLETED` when the final stage concludes.
+- Fixed `ASYNC230` in `JobService` by running file writes in a thread pool.
 - Updated `worker_routes.py` to ensure that `state_manager.mark_task_complete` is called even when a task is skipped due to idempotency.
-- Updated `src/core/state.py` by properly dedenting the token bucket evaluation logic so it executes regardless of whether the document initially existed.
-- Updated `src/engines/execution_engine.py` and `src/engines/interfaces.py` to properly define and await the `StateManager` interface methods.
+- Updated `src/infrastructure/state.py` by properly dedenting the token bucket evaluation logic so it executes regardless of whether the document initially existed.
+- Updated `src/services/execution.py` and `src/services/interfaces.py` to properly define and await the `StateManager` interface methods.
 - Validated all 30 tests pass and linters (`ruff`) show no errors.
 
 **Next Up:**
 
 - Continue with Phase 4 (Reporting & Ops).
 - Start implementing BigQuery `migration_events` table + live progress view.
+
+## 2026-09-06 - Layered Architecture Refactor
+
+**Decisions Made:**
+- **Layered Architecture:** Reorganized into src/api, src/domain, src/services, and src/infrastructure.
+- **Service Naming:** Renamed *Engine to *Service.
+
+**Current State:**
+- Refactored entire codebase and tests.
+- Updated docs.
+- All tests pass.
+
+**Next Up:**
+- Phase 4 (Reporting & Ops).

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     DISCOVERY_JOB_NAME: str = "migration-discovery-job"
     SERVICE_URL: str = "http://localhost:8000"
     K_SERVICE: str = ""  # Populated by Cloud Run automatically
+    DATABASENAME: str = "migration-poc"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.job_routes import job_router
-from src.api.worker_routes import worker_router
+from src.api.routers.jobs import job_router
+from src.api.routers.workers import worker_router
 
 # Configure root logger to output INFO logs
 logging.basicConfig(

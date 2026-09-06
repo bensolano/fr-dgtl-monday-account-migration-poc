@@ -38,9 +38,14 @@
 - Add config.prod.yml to pass cloud run env vars to deploy yml
 - WIP: test migration > need to include reporting in UI
 
+### 6.10
+
+- add database var to config.py and firestoreclient
+
 TODO:
 - TEST MIGRATION PHASE
 - Add reporting in UI
+- Add OIDC token check to task handler
 - Fix tests
 - Document tests and remove bloat
 - Move from background tasks locally to container-centered approach reproducing production env architecture

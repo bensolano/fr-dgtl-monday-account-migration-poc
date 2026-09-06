@@ -1,0 +1,345 @@
+import datetime
+import logging
+
+from google.cloud import firestore
+
+from src.core.config import settings
+from src.domain.interfaces import GcpClientsInterface, TokenBucketInterface
+from src.domain.models import DeadLetterDocument, JobDocument, MigrationDag, TaskPayload
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ID = settings.PROJECT_ID
+
+
+class StateManager:
+    """
+    Manages job state and idempotency mappings in Firestore.
+    """
+
+    def __init__(
+        self,
+        gcp_clients: GcpClientsInterface,
+        project_id: str = PROJECT_ID,
+        rate_limiter: TokenBucketInterface | None = None,
+    ):
+        """
+        Initializes the StateManager.
+
+        Args:
+            gcp_clients: Injected GCP clients interface.
+            project_id (str): The GCP project ID for Firestore.
+            rate_limiter (TokenBucketInterface | None): Injected pure mathematical rate limiter.
+        """
+        self.gcp_clients = gcp_clients
+        self.project_id = project_id
+        self.rate_limiter = rate_limiter
+        self._db = None
+
+    @property
+    def db(self):
+        if self._db is not None:
+            return self._db
+        return self.gcp_clients.firestore_client
+
+    async def get_job(self, job_id: str) -> JobDocument | None:
+        """
+        Retrieves the state of a migration job.
+
+        Args:
+            job_id (str): The unique identifier of the job.
+
+        Returns:
+            Optional[JobDocument]: The job document if it exists, else None.
+        """
+        if not self.db:
+            return None
+        doc = await self.db.collection("jobs").document(job_id).get()
+        if doc.exists:
+            return JobDocument.model_validate(doc.to_dict())
+        return None
+
+    async def get_dest_id(
+        self, job_id: str, entity_type: str, source_id: str
+    ) -> str | None:
+        """
+        Retrieves the destination ID for a given source ID to ensure idempotency.
+
+        Args:
+            job_id (str): The current job ID.
+            entity_type (str): The type of entity (e.g., 'workspace', 'board', 'item').
+            source_id (str): The ID of the entity in the source account.
+
+        Returns:
+            Optional[str]: The destination ID if the entity has already been created, else None.
+        """
+        if not self.db:
+            return None
+
+        doc_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("id_map")
+            .document(f"{entity_type}_{source_id}")
+        )
+        doc = await doc_ref.get()
+
+        if doc.exists:
+            data = doc.to_dict()
+            return data.get("dest_id")
+        return None
+
+    async def set_dest_id(
+        self, job_id: str, entity_type: str, source_id: str, dest_id: str
+    ) -> None:
+        """
+        Stores the destination ID mapped to the source ID for future idempotency checks.
+
+        Args:
+            job_id (str): The current job ID.
+            entity_type (str): The type of entity (e.g., 'workspace', 'board', 'item').
+            source_id (str): The ID of the entity in the source account.
+            dest_id (str): The ID of the entity created in the destination account.
+        """
+        if not self.db:
+            logger.warning(
+                f"No Firestore client. Would map {entity_type} {source_id} -> {dest_id} for job {job_id}"
+            )
+            return
+
+        doc_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("id_map")
+            .document(f"{entity_type}_{source_id}")
+        )
+        await doc_ref.set(
+            {
+                "source_id": source_id,
+                "dest_id": dest_id,
+                "entity_type": entity_type,
+                "created_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
+
+    async def consume_budget(
+        self, job_id: str, required_tokens: int = 50000
+    ) -> tuple[bool, int]:
+        """
+        Proactively checks if the global token bucket has enough tokens.
+        If sufficient, deducts them transactionally and returns (True, 0).
+        If insufficient, returns (False, seconds_until_reset), signaling the worker to yield.
+
+        Args:
+            job_id: The job context.
+            required_tokens: Expected complexity of the next operation.
+
+        Returns:
+            tuple[bool, int]: (True, 0) if safe to proceed, (False, seconds_until_reset) if rate limited.
+        """
+        if not self.db:
+            return True, 0  # Allow pass-through for local dev without Firestore
+
+        bucket_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("state")
+            .document("complexity_bucket")
+        )
+
+        @firestore.async_transactional
+        async def update_in_transaction(transaction, ref):
+            snapshot = await ref.get(transaction=transaction)
+
+            # Default to full budget if not initialized
+            current_tokens = 5000000
+            last_reset = datetime.datetime.now(datetime.UTC)
+
+            if snapshot.exists:
+                data = snapshot.to_dict()
+                current_tokens = data.get("remaining_tokens", 5000000)
+                # We store naive datetimes in Firestore, so we need to handle them carefully
+                last_reset_val = data.get("last_reset")
+                if last_reset_val:
+                    # Firestore handles the parsing usually, but just in case
+                    if isinstance(last_reset_val, str):
+                        last_reset = datetime.datetime.fromisoformat(last_reset_val)
+                    else:
+                        last_reset = last_reset_val
+
+            # Delegate the math to the pure domain logic class (SRP)
+            if not self.rate_limiter:
+                raise RuntimeError(
+                    "TokenBucketInterface dependency not injected into StateManager"
+                )
+
+            result = self.rate_limiter.evaluate(
+                current_tokens, last_reset, required_tokens
+            )
+
+            if result.allowed:
+                # Deduct and allow
+                transaction.set(
+                    ref,
+                    {
+                        "remaining_tokens": result.new_tokens,
+                        "last_reset": result.new_last_reset,
+                    },
+                )
+
+            return result.allowed, result.retry_in
+
+        return await update_in_transaction(self.db.transaction(), bucket_ref)
+
+    async def sync_budget(
+        self, job_id: str, actual_remaining: int, reset_in_seconds: int
+    ) -> None:
+        """
+        Reactively syncs the token bucket with the exact numbers returned by Monday API.
+
+        Args:
+            job_id: The job context.
+            actual_remaining: The exact remaining complexity points.
+            reset_in_seconds: The exact seconds until the next refill.
+        """
+        if not self.db:
+            return
+
+        bucket_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("state")
+            .document("complexity_bucket")
+        )
+
+        # Calculate when this specific budget will expire
+        last_reset = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            seconds=(60 - reset_in_seconds)
+        )
+
+        await bucket_ref.set(
+            {"remaining_tokens": actual_remaining, "last_reset": last_reset}
+        )
+
+    async def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
+        """
+        Initializes the tracking state for a DAG execution to support stage gating.
+
+        Args:
+            job_id: The job context.
+            dag: The parsed DAG of tasks.
+        """
+        if not self.db:
+            return
+
+        batch = self.db.batch()
+        for stage in ["workspaces", "boards", "groups", "columns", "items"]:
+            tasks = getattr(dag, stage)
+            if not tasks:
+                continue
+            stage_ref = (
+                self.db.collection("jobs")
+                .document(job_id)
+                .collection("dag_state")
+                .document(stage)
+            )
+            batch.set(
+                stage_ref,
+                {"total_tasks": len(tasks), "completed_tasks": 0, "status": "pending"},
+            )
+        await batch.commit()
+
+    async def mark_task_complete(self, job_id: str, stage: str) -> bool:
+        """
+        Increments the completion counter for a stage and returns True if the stage is fully complete.
+
+        Args:
+            job_id: The job context.
+            stage: The stage that completed a task (e.g. 'workspaces').
+
+        Returns:
+            bool: True if this task completion finished the entire stage.
+        """
+        if not self.db:
+            return False
+
+        stage_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("dag_state")
+            .document(stage)
+        )
+
+        @firestore.async_transactional
+        async def update_and_check(transaction, ref):
+            snapshot = await ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return False
+
+            data = snapshot.to_dict()
+            completed = data.get("completed_tasks", 0) + 1
+            total = data.get("total_tasks", 1)
+
+            updates = {"completed_tasks": completed}
+            is_done = False
+
+            if completed >= total:
+                updates["status"] = "completed"
+                is_done = True
+
+            transaction.update(ref, updates)
+            return is_done
+
+        return await update_and_check(self.db.transaction(), stage_ref)
+
+    async def save_dead_letter(
+        self, job_id: str, stage: str, task: TaskPayload, error_message: str
+    ) -> None:
+        """
+        Saves a permanently failed task to the dead letter queue in Firestore.
+
+        Args:
+            job_id (str): The current job ID.
+            stage (str): The stage the task was in.
+            task (TaskPayload): The task payload.
+            error_message (str): The final error message that caused the failure.
+        """
+        if not self.db:
+            logger.error(
+                f"Local DLQ Fallback - Job {job_id} | Stage {stage} | Error: {error_message}"
+            )
+            return
+
+        dlq_ref = (
+            self.db.collection("jobs")
+            .document(job_id)
+            .collection("dead_letters")
+            .document()
+        )
+
+        doc = DeadLetterDocument(
+            stage=stage,
+            task=task,
+            error=error_message,
+        )
+
+        doc_data = doc.model_dump()
+        doc_data["failed_at"] = firestore.SERVER_TIMESTAMP
+        await dlq_ref.set(doc_data)
+
+    async def update_job_status(self, job_id: str, status: str) -> None:
+        """
+        Updates the overall status of the migration job.
+
+        Args:
+            job_id (str): The current job ID.
+            status (str): The new status (e.g., 'MIGRATION_COMPLETED').
+        """
+        if not self.db:
+            logger.info(f"Local dev fallback - Job {job_id} status updated to {status}")
+            return
+
+        job_ref = self.db.collection("jobs").document(job_id)
+        await job_ref.update(
+            {"status": status, "updated_at": firestore.SERVER_TIMESTAMP}
+        )
