@@ -2,11 +2,10 @@ import logging
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from src.api.dependencies import get_job_engine, get_orchestration
-from src.core import gcp
 from src.core.config import settings
 from src.domain.models import (
     ExecuteJobRequest,
@@ -15,6 +14,7 @@ from src.domain.models import (
     JobCreateResponse,
     JobStatusResponse,
 )
+from src.infrastructure.gcp import services as gcp
 from src.services.job import JobService
 from src.services.orchestration import OrchestrationService
 
@@ -281,3 +281,80 @@ async def delete_job(
     await gcp.delete_gcs_artifacts(job_id)
     await job_engine.delete_job(job_id)
     return {"status": "DELETED", "message": "Job deleted successfully"}
+
+
+@job_router.get("/{job_id}/inventory/stream")
+async def stream_inventory(
+    job_id: str,
+    request: Request,
+    job_engine: Annotated[JobService, Depends(get_job_engine)],
+):
+    """
+    Server-Sent Events (SSE) endpoint that streams real-time Firestore updates
+    for the inventory subcollection to the frontend.
+    """
+    import asyncio
+    import json
+
+    from fastapi.responses import StreamingResponse
+    from google.cloud import firestore
+
+    job = await job_engine.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # The async Python Firestore client (AsyncClient) does not support on_snapshot (raises NotImplementedError).
+    # We must instantiate a synchronous client specifically for this SSE endpoint.
+    # The sync client's on_snapshot creates a background gRPC thread which won't block our async event loop.
+    sync_db = firestore.Client(project=settings.PROJECT_ID)
+
+    # We use an asyncio.Queue to bridge the sync Firestore callback to our async generator.
+    queue = asyncio.Queue()
+
+    def on_snapshot(col_snapshot, changes, read_time):
+        updated_docs = []
+        for change in changes:
+            # We care about added and modified documents
+            if change.type.name in ["ADDED", "MODIFIED"]:
+                doc_dict = change.document.to_dict()
+                # Include the document ID manually just in case it's not in the payload
+                doc_dict["object_id"] = change.document.id
+                updated_docs.append(doc_dict)
+
+        if updated_docs:
+            # Schedule the push to the queue in a thread-safe manner
+            # Using loop.call_soon_threadsafe because the Firestore callback runs in a background thread
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(queue.put_nowait, updated_docs)
+            except RuntimeError:
+                pass  # Event loop might be closed during shutdown
+
+    # Attach the listener to the inventory subcollection
+    inventory_ref = sync_db.collection("jobs").document(job_id).collection("inventory")
+
+    async def event_generator():
+        try:
+            while True:
+                # Disconnect if client drops connection
+                if await request.is_disconnected():
+                    logger.info(f"Client disconnected from SSE stream for job {job_id}")
+                    break
+
+                try:
+                    # Wait for data from the queue, with a timeout to allow heartbeat
+                    # checking connection drops more responsively
+                    updated_docs = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(updated_docs, default=str)}\n\n"
+                except TimeoutError:
+                    # Send a heartbeat comment every 15 seconds to keep the connection alive
+                    yield ": heartbeat\n\n"
+        except asyncio.CancelledError:
+            logger.info(f"SSE stream cancelled for job {job_id}")
+        finally:
+            logger.info(f"Cleaning up Firestore snapshot listener for job {job_id}")
+            doc_watch.unsubscribe()
+
+    doc_watch = inventory_ref.on_snapshot(on_snapshot)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

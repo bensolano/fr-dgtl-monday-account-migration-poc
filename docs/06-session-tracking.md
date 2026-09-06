@@ -243,7 +243,11 @@
 - Added `update_inventory_status` to `StateManager` in `src/infrastructure/state/firestore.py`.
 - Updated the FastAPI worker endpoint in `src/api/routers/workers.py` to invoke `update_inventory_status` throughout the execution lifecycle (`processing`, `success`, `error`, `pending` [on rate limit/transient error]).
 - Fixed `BLE001` ruff linting issue in the new Firestore update method.
+- Added `GET /jobs/{job_id}/inventory/stream` endpoint to FastAPI using `StreamingResponse` and `asyncio.Queue` to bridge Firestore `on_snapshot` events to Server-Sent Events (SSE).
+- Fixed `NotImplementedError` by instantiating a synchronous `firestore.Client` specifically for the `on_snapshot` listener, safely bridging the gRPC background thread back to the async event loop.
+- Created React `LiveProgressView` component using native `EventSource` to consume the SSE stream and merge document updates into state.
+- Integrated `LiveProgressView` into `App.tsx` to replace the static loading spinner during the EXECUTING phase.
+- Added CSS styles for progress table and connection status badges.
 
 **Next Up:**
-- Update frontend React application to consume the new Firestore fields via `onSnapshot` for live status visualization.
 - Continue Phase 4 Reporting (BigQuery schema generation).

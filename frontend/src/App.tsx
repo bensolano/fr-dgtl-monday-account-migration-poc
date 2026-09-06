@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
+import { LiveProgressView } from './LiveProgressView';
 
 // In production, we use relative paths to hit the NGINX proxy.
 // In local development, we hit the FastAPI server directly on port 8000.
@@ -212,7 +213,7 @@ function App() {
           {(jobStatus === 'PENDING' || jobStatus === 'RUNNING' || jobStatus === 'EXECUTING') && (
             <div className="active-job-actions">
                {jobStatus === 'EXECUTING' ? (
-                 <div className="spinner">Migration execution in progress... check GCP logs for real-time Cloud Tasks telemetry.</div>
+                 <LiveProgressView jobId={jobId} />
                ) : (
                  <div className="spinner">Discovery in progress...</div>
                )}

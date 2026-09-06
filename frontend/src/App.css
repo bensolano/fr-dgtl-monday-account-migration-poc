@@ -180,3 +180,116 @@ button:disabled {
 .matrix-section li {
   margin-bottom: 0.25rem;
 }
+
+/* Live Progress View Styles */
+.live-progress-container {
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  border: 1px solid #e5e7eb;
+  width: 100%;
+}
+
+.connection-badge {
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 1rem;
+}
+
+.connection-badge.connecting {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.connection-badge.connected {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.connection-badge.disconnected {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.progress-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.progress-table th {
+  position: sticky;
+  top: 0;
+  background-color: #f9fafb;
+  padding: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.progress-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #4b5563;
+}
+
+.progress-table tr:hover {
+  background-color: #f9fafb;
+}
+
+.badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-pending {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+.badge-processing {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-success {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.badge-error {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.dest-id {
+  font-family: monospace;
+  background-color: #f3f4f6;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+
+.error-text {
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.empty-state {
+  text-align: center;
+  font-style: italic;
+  color: #6b7280;
+  padding: 2rem !important;
+}

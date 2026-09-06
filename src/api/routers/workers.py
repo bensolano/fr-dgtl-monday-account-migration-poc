@@ -4,9 +4,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_orchestration, get_state_manager
-from src.core import gcp, time_utils
+from src.core import time_utils
 from src.domain.exceptions import MondayRateLimitError
 from src.domain.models import TaskResponse, WorkerTaskRequest
+from src.infrastructure.gcp import services as gcp
 from src.infrastructure.monday.client import MondayClient
 from src.infrastructure.state.firestore import StateManager
 from src.services.execution import ExecutionService
