@@ -66,6 +66,9 @@ class DiscoveryService:
             name
             type
             board_kind
+            workspace {
+              id
+            }
           }
         }
         """
@@ -140,7 +143,9 @@ class DiscoveryService:
         variables = {"boardId": [board_id]}
         response = await self.client.execute_query(query, variables)
         try:
-            return response["data"]["boards"][0].get("columns", [])
+            columns = response["data"]["boards"][0].get("columns", [])
+            # Filter out the intrinsic 'name' column, which cannot be created via the API
+            return [col for col in columns if col.get("type") != "name"]
         except (KeyError, IndexError):
             return []
 
@@ -165,6 +170,12 @@ class DiscoveryService:
                   group {
                       id
                   }
+                  column_values {
+                      id
+                      type
+                      value
+                      text
+                  }
               }
             }
           }
@@ -179,6 +190,12 @@ class DiscoveryService:
               name
               group {
                   id
+              }
+              column_values {
+                  id
+                  type
+                  value
+                  text
               }
             }
           }

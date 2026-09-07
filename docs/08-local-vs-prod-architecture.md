@@ -36,3 +36,7 @@ The third phase handles writing the discovered objects to the destination accoun
 
 ### Stage Gating
 *   **Both Environments:** A strict DAG requires that the `workspaces` stage completes before `boards` begins. The Orchestrator registers the total expected tasks per stage in Firestore (`jobs/{job_id}/dag_state/{stage}`). As each FastAPI worker finishes a mutation, it transactionally decrements this counter. When it hits zero, it triggers the enqueue loop for the subsequent stage.
+
+## Real-Time UI Tracking (SSE)
+*   **Both Environments:** The frontend relies on Server-Sent Events (SSE) to display a live progress table of the migration.
+*   **Backend Implementation:** Because the Python `firestore.AsyncClient` does not support `on_snapshot` listeners natively, `src/api/routers/jobs.py` dynamically spins up a *synchronous* Firestore client for the `/jobs/{job_id}/inventory/stream` route. The synchronous `on_snapshot` callback runs in a background gRPC thread. When documents are modified, the callback bridges the thread gap by pushing updates into an `asyncio.Queue` using `loop.call_soon_threadsafe`, which an async generator then yields to the client as an SSE stream. This approach prevents deadlocks in the main FastAPI event loop while supporting persistent connections.

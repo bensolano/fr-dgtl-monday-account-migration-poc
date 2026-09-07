@@ -96,18 +96,26 @@ class ExecutionService:
         name = payload.get("name", f"Migrated Board {source_id}")
         board_kind = payload.get("board_kind", "public")
 
-        # If payload had a workspace_id, we would map it:
-        # source_ws_id = payload.get("workspace_id")
-        # dest_ws_id = self.state_manager.get_dest_id(self.job_id, "workspace", source_ws_id)
+        # Map workspace if available
+        dest_ws_id = None
+        source_ws_id = (
+            payload.get("workspace", {}).get("id") if payload.get("workspace") else None
+        )
+        if source_ws_id:
+            dest_ws_id = await self.state_manager.get_dest_id(
+                self.job_id, "workspace", str(source_ws_id)
+            )
 
         query = """
-        mutation($name: String!, $kind: BoardKind!) {
-            create_board(board_name: $name, board_kind: $kind) {
+        mutation($name: String!, $kind: BoardKind!, $workspaceId: ID) {
+            create_board(board_name: $name, board_kind: $kind, workspace_id: $workspaceId) {
                 id
             }
         }
         """
         variables = {"name": name, "kind": board_kind}
+        if dest_ws_id:
+            variables["workspaceId"] = dest_ws_id
 
         response = await self.client.execute_query(
             query=query,
@@ -204,10 +212,68 @@ class ExecutionService:
 
         variables = {"boardId": dest_board_id, "itemName": name}
 
+        # Map column values
+        source_column_values = payload.get("column_values", [])
+        mapped_column_values = {}
+        for col in source_column_values:
+            col_type = col.get("type")
+            # Skip read-only columns (removed person columns from skip list to allow mapping)
+            if col_type in [
+                "subtasks",
+                "formula",
+                "creation_log",
+                "last_updated",
+                "board_relation",
+                "lookup",
+                "name",
+            ]:
+                continue
+
+            raw_value = col.get("value")
+            if raw_value is None and col_type not in ["person", "multiple-person"]:
+                continue
+
+            # Find the new column ID
+            source_col_scoped_id = f"{source_board_id}_{col['id']}"
+            dest_col_id = await self.state_manager.get_dest_id(
+                self.job_id, "column", source_col_scoped_id
+            )
+
+            if dest_col_id:
+                if col_type in ["person", "multiple-person"]:
+                    # Monday API returns names in 'text' (e.g. "Jane Doe, John Smith")
+                    names = [
+                        n.strip() for n in col.get("text", "").split(",") if n.strip()
+                    ]
+                    persons_and_teams = []
+                    for name_str in names:
+                        dest_user_id = await self.state_manager.get_dest_id(
+                            self.job_id, "user_name", name_str
+                        )
+                        if dest_user_id:
+                            persons_and_teams.append(
+                                {"id": int(dest_user_id), "kind": "person"}
+                            )
+                    if persons_and_teams:
+                        mapped_column_values[dest_col_id] = {
+                            "personsAndTeams": persons_and_teams
+                        }
+                else:
+                    try:
+                        import json
+
+                        # 'value' from discovery is a JSON string. Parse it into a dictionary
+                        # so that it doesn't get double-encoded when we pass $columnValues
+                        mapped_column_values[dest_col_id] = json.loads(raw_value)
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug(
+                            f"Failed to parse column value for {source_col_scoped_id}: {e}"
+                        )
+
         # If group is present and mapped, create the item inside the group
         query = """
-        mutation($boardId: ID!, $groupId: String, $itemName: String!) {
-            create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName) {
+        mutation($boardId: ID!, $groupId: String, $itemName: String!, $columnValues: JSON) {
+            create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName, column_values: $columnValues) {
                 id
             }
         }
@@ -219,6 +285,11 @@ class ExecutionService:
             )
             if dest_group_id:
                 variables["groupId"] = dest_group_id
+
+        if mapped_column_values:
+            import json
+
+            variables["columnValues"] = json.dumps(mapped_column_values)
 
         response = await self.client.execute_query(
             query=query,

@@ -85,7 +85,7 @@ After reviewing the Markdown report, the user consents to write data to the dest
 - **Method:** `OrchestrationService.enqueue_dag(job_id, dag)`
 - **GCP Services:**
   - **Cloud Storage:** Uploads `dag.json` (via `GCSDagStorage`) so distributed workers can retrieve the blueprint later.
-  - **Firestore:** Calls `StateManager.initialize_dag_state()` (via `StateInterface`). Creates a `dag_state/{stage}` counter for every stage (e.g., `boards: {total_tasks: 50, completed: 0}`).
+  - **Firestore:** Calls `StateManager.initialize_dag_state()` (via `StateInterface`). Creates a `dag_state/{stage}` counter for every stage and batch writes placeholder documents to the `inventory` subcollection for the frontend SSE stream.
   - **Cloud Tasks:** Dispatches only the _first_ stage (`workspaces`) to the `migration-workspaces` queue via `_enqueue_stage()` (via `get_task_queue()` factory resolving to `CloudTaskQueue`).
 
 ### Step 10: Task Handling & Proactive Rate Limiting

@@ -285,3 +285,32 @@
 **Next Up:**
 
 - Continue with Phase 4 (Reporting & Ops).
+
+## 2026-09-07 - Bug Fixes: SSE UI, Workspaces, and Columns
+
+**Decisions Made:**
+
+- **SSE Streaming Fix:** The `/stream` route now strictly assigns the `on_snapshot` callback and unsubscribes on stream close. `StateManager.initialize_dag_state` now batch-writes all tasks into the `inventory` subcollection as soon as execution begins so the UI can populate them in the 'pending' state. To prevent a silent threading failure where `asyncio.get_running_loop()` was called inside the background gRPC callback, the event loop is now explicitly captured in the main thread and passed into the callback closure.
+- **Workspace Mapping Fix:** Board creation will now map the destination workspace. We fetch `workspace { id }` during discovery in `get_boards`, map it using `state_manager`, and inject `$workspaceId` into `create_board` in `ExecutionService`.
+- **Column Values Fix:** Item creation will now migrate column contents. `get_items` discovers `column_values`, and `create_item` dynamically maps the source column ID to the destination column ID, passing a serialized JSON payload into the GraphQL `$columnValues` variable.
+  - **Double Encoding Fix:** Column values were arriving as stringified JSON from the API (e.g. `"{\"index\": 1}"`) and being double-encoded. `create_item` now parses them via `json.loads` back to Python dictionaries before passing them to the final `$columnValues` parameter.
+  - **Intrinsic Columns Fix:** Filtered out the `name` column in the discovery payload because it cannot be recreated via `create_column`.
+- **People/User Mapping:** Added logic to migrate `person` and `multiple-person` columns natively by translating users by name.
+  - **Pagination Pre-cache:** Added an automatic pre-cache step in `POST /jobs/{job_id}/execute` that queries the destination account for all users using cursor pagination (loops `page` and `limit`) and maps them (`user_name` -> `dest_id`) into the job's `id_map`.
+  - **Execution Translation:** `ExecutionService.create_item` reads the comma-separated name strings from the `text` field of the column value, looks up the pre-cached destination IDs by name, and constructs the required `{"personsAndTeams": [{"id": X, "kind": "person"}]}` object for Monday.
+- **SSE Stream Fix (Named Database & Buffering):** Resolved issue where the SSE endpoint connected but remained empty in the frontend.
+  - Initialized synchronous `firestore.Client` with `database=settings.DATABASENAME` (`migration-poc`) so `on_snapshot` subscribes to the active dataset rather than `(default)`.
+  - Added anti-buffering response headers (`Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`) to `StreamingResponse`.
+  - Added `proxy_buffering off;`, `proxy_cache off;`, and `proxy_http_version 1.1;` to Nginx API reverse proxy configuration in `frontend/nginx.conf.template`.
+  - Added test coverage in `tests/api/test_sse_stream.py`.
+
+**Current State:**
+
+- SSE stream works properly, filling the frontend UI without delay.
+- Discovered boards retain their appropriate workspace placement in the destination.
+- Migrated items contain their data, including assigned people if they exist in both accounts by exact name.
+- All tests pass.
+
+**Next Up:**
+
+- Phase 4 Reporting.

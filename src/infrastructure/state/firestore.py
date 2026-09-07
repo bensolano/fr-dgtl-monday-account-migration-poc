@@ -266,7 +266,8 @@ class StateManager:
 
     async def initialize_dag_state(self, job_id: str, dag: MigrationDag) -> None:
         """
-        Initializes the tracking state for a DAG execution to support stage gating.
+        Initializes the tracking state for a DAG execution to support stage gating,
+        and pre-populates the inventory for live UI tracking.
 
         Args:
             job_id: The job context.
@@ -276,10 +277,14 @@ class StateManager:
             return
 
         batch = self.db.batch()
+        batch_count = 0
+
         for stage in ["workspaces", "boards", "groups", "columns", "items"]:
             tasks = getattr(dag, stage)
             if not tasks:
                 continue
+
+            # 1. Initialize stage gating counter
             stage_ref = (
                 self.db.collection("jobs")
                 .document(job_id)
@@ -290,7 +295,47 @@ class StateManager:
                 stage_ref,
                 {"total_tasks": len(tasks), "completed_tasks": 0, "status": "pending"},
             )
-        await batch.commit()
+            batch_count += 1
+            if batch_count >= 500:
+                await batch.commit()
+                batch = self.db.batch()
+                batch_count = 0
+
+            # 2. Pre-populate inventory subcollection for UI
+            for task in tasks:
+                inventory_ref = (
+                    self.db.collection("jobs")
+                    .document(job_id)
+                    .collection("inventory")
+                    .document(task.source_id)
+                )
+
+                # Extract name/title from payload
+                payload = task.payload
+                name = (
+                    payload.get("name")
+                    or payload.get("title")
+                    or f"Unknown {task.entity_type}"
+                )
+
+                batch.set(
+                    inventory_ref,
+                    {
+                        "object_type": task.entity_type,
+                        "name": name,
+                        "migration_status": "pending",
+                        "updated_at": firestore.SERVER_TIMESTAMP,
+                    },
+                )
+                batch_count += 1
+
+                if batch_count >= 500:
+                    await batch.commit()
+                    batch = self.db.batch()
+                    batch_count = 0
+
+        if batch_count > 0:
+            await batch.commit()
 
     async def mark_task_complete(self, job_id: str, stage: str) -> bool:
         """

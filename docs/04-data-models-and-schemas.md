@@ -152,7 +152,7 @@ graph LR
   task: {
     entity_type: string,
     source_id: string,
-    payload: object,
+    payload: object, // Original entity metadata from the inventory (e.g. workspace id, column_values)
     retry_count: number
   },
   error: string,
@@ -204,6 +204,13 @@ Each task represents exactly one object-copy operation. The payload reflects the
   }
 }
 ```
+
+### Expected Payload Contents by Entity Type
+
+*   **Boards**: `{"id": "...", "name": "...", "board_kind": "...", "workspace": {"id": "..."}}`
+*   **Groups**: `{"id": "...", "title": "...", "parent_board_id": "..."}`
+*   **Columns**: `{"id": "...", "title": "...", "type": "...", "parent_board_id": "..."}`
+*   **Items**: `{"id": "...", "name": "...", "parent_board_id": "...", "group": {"id": "..."}, "column_values": [{"id": "...", "type": "...", "value": "...", "text": "..."}]}`
 
 *Note on Retries (The Re-enqueue Pattern):* When a task encounters an empty Token Bucket, it does not rely on Cloud Tasks' native HTTP 429 backoff. Instead, it creates a new task using this **exact same payload shape**, but sets the Cloud Tasks `schedule_time` parameter to the exact moment the rate limit resets, and returns `200 OK` for the current execution.
 

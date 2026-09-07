@@ -145,6 +145,32 @@ async def execute_job(
 
     try:
         await gcp.store_dest_secret(job_id, request.dest_api_key)
+
+        # Pre-cache destination users by name for person column mapping
+        try:
+            from src.infrastructure.monday.client import MondayClient
+
+            client = MondayClient(request.dest_api_key)
+            page = 1
+            limit = 100
+            while True:
+                users_query = (
+                    f"query {{ users(limit: {limit}, page: {page}) {{ id name }} }}"
+                )
+                users_response = await client.execute_query(users_query)
+                users = users_response.get("data", {}).get("users", [])
+
+                for user in users:
+                    await orchestration.state_manager.set_dest_id(
+                        job_id, "user_name", user["name"], str(user["id"])
+                    )
+
+                if len(users) < limit:
+                    break
+                page += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to pre-cache destination users: {e}")
+
         inventory_data = await gcp.get_inventory(job_id)
 
         dag = orchestration.build_dag(inventory_data)
@@ -312,26 +338,35 @@ async def stream_inventory(
     sync_db = firestore.Client(
         project=settings.PROJECT_ID,
         credentials=gcp_clients.credentials,
+        database=settings.DATABASENAME,
     )
 
     # We use an asyncio.Queue to bridge the sync Firestore callback to our async generator.
     queue = asyncio.Queue()
 
+    # CRITICAL: We must capture the async event loop here on the main thread
+    # so the background gRPC thread can safely push updates into it.
+    loop = asyncio.get_running_loop()
+
     def on_snapshot(col_snapshot, changes, read_time):
         updated_docs = []
-        for change in changes:
-            # We care about added and modified documents
-            if change.type.name in ["ADDED", "MODIFIED"]:
-                doc_dict = change.document.to_dict()
-                # Include the document ID manually just in case it's not in the payload
-                doc_dict["object_id"] = change.document.id
+        if changes:
+            for change in changes:
+                # Handle both enum and string representation for change.type
+                change_type = getattr(change.type, "name", str(change.type))
+                if change_type in ["ADDED", "MODIFIED"]:
+                    doc_dict = change.document.to_dict() or {}
+                    doc_dict["object_id"] = change.document.id
+                    updated_docs.append(doc_dict)
+        elif col_snapshot:
+            for doc in col_snapshot:
+                doc_dict = doc.to_dict() or {}
+                doc_dict["object_id"] = doc.id
                 updated_docs.append(doc_dict)
 
         if updated_docs:
             # Schedule the push to the queue in a thread-safe manner
-            # Using loop.call_soon_threadsafe because the Firestore callback runs in a background thread
             try:
-                loop = asyncio.get_running_loop()
                 loop.call_soon_threadsafe(queue.put_nowait, updated_docs)
             except RuntimeError:
                 pass  # Event loop might be closed during shutdown
@@ -361,6 +396,15 @@ async def stream_inventory(
             logger.info(f"Cleaning up Firestore snapshot listener for job {job_id}")
             doc_watch.unsubscribe()
 
+    # We must attach the listener here BEFORE returning the StreamingResponse
     doc_watch = inventory_ref.on_snapshot(on_snapshot)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

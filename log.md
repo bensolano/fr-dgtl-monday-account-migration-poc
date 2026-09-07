@@ -44,11 +44,15 @@
 - refactor codebase tree structure
 - include UI tracking fields (`migration_status`, `dest_id`, `error_message`, `updated_at`) in the `inventory` schema and update fields during execution
 - add Server-Sent Events endpoint for frontend websocket-like real-time updates of migration execution
+- fix SSE stream by setting named Firestore database (`migration-poc`), adding SSE response headers, and disabling Nginx proxy buffering
+
+### 
 
 TODO:
 - TEST MIGRATION PHASE
 > boards need to be created in right workspace, params need to be taken into account
 > look at DAG in storage if it has the right info
+- Explore MCP
 - Add OIDC token check to task handler
 - Fix tests
 - Document tests and remove bloat
