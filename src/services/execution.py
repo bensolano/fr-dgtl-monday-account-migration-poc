@@ -107,13 +107,16 @@ class ExecutionService:
             )
 
         query = """
-        mutation($name: String!, $kind: BoardKind!, $workspaceId: ID) {
-            create_board(board_name: $name, board_kind: $kind, workspace_id: $workspaceId) {
+        mutation($name: String!, $kind: BoardKind!, $workspaceId: ID, $empty: Boolean) {
+            create_board(board_name: $name, board_kind: $kind, workspace_id: $workspaceId, empty: $empty) {
                 id
+                groups {
+                    id
+                }
             }
         }
         """
-        variables = {"name": name, "kind": board_kind}
+        variables = {"name": name, "kind": board_kind, "empty": True}
         if dest_ws_id:
             variables["workspaceId"] = dest_ws_id
 
@@ -124,8 +127,18 @@ class ExecutionService:
             distributed=True,
         )
         await self._sync_complexity(response)
-        dest_id = str(response["data"]["create_board"]["id"])
+        board_data = response["data"]["create_board"]
+        dest_id = str(board_data["id"])
         await self.state_manager.set_dest_id(self.job_id, "board", source_id, dest_id)
+
+        # Track default boilerplate groups created by Monday to clean them up once real groups are created
+        default_groups = board_data.get("groups") or []
+        default_group_ids = [g["id"] for g in default_groups if "id" in g]
+        if default_group_ids:
+            await self.state_manager.set_dest_id(
+                self.job_id, "board_default_groups", source_id, ",".join(default_group_ids)
+            )
+
         return dest_id
 
     async def create_group(self, source_id: str, payload: dict[str, Any]) -> str:
@@ -158,7 +171,56 @@ class ExecutionService:
         await self._sync_complexity(response)
         dest_id = str(response["data"]["create_group"]["id"])
         await self.state_manager.set_dest_id(self.job_id, "group", source_id, dest_id)
+
+        # Clean up any leftover default groups on the destination board now that a migrated group exists
+        await self._cleanup_default_groups(source_board_id, dest_board_id)
+
         return dest_id
+
+    async def _cleanup_default_groups(
+        self, source_board_id: str, dest_board_id: str
+    ) -> None:
+        """Deletes boilerplate placeholder groups that Monday.com automatically creates on new boards."""
+        try:
+            default_group_str = await self.state_manager.get_dest_id(
+                self.job_id, "board_default_groups", source_board_id
+            )
+            if not default_group_str:
+                return
+
+            # Clear immediately in state manager to prevent duplicate delete calls from concurrent group tasks
+            await self.state_manager.set_dest_id(
+                self.job_id, "board_default_groups", source_board_id, ""
+            )
+
+            group_ids = [
+                gid.strip() for gid in default_group_str.split(",") if gid.strip()
+            ]
+            for group_id in group_ids:
+                delete_query = """
+                mutation($boardId: ID!, $groupId: String!) {
+                    delete_group(board_id: $boardId, group_id: $groupId) {
+                        id
+                        deleted
+                    }
+                }
+                """
+                try:
+                    del_res = await self.client.execute_query(
+                        query=delete_query,
+                        variables={"boardId": dest_board_id, "groupId": group_id},
+                        idempotency_key=f"del_default_grp_{dest_board_id}_{group_id}",
+                        distributed=False,
+                    )
+                    await self._sync_complexity(del_res)
+                except Exception as e:
+                    logger.debug(
+                        f"Default group {group_id} deletion skipped or already deleted on board {dest_board_id}: {e}"
+                    )
+        except Exception as e:
+            logger.warning(
+                f"Failed to clean up default groups for board {dest_board_id}: {e}"
+            )
 
     async def create_column(self, source_id: str, payload: dict[str, Any]) -> str:
         title = payload.get("title", f"Column {source_id}")

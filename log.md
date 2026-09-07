@@ -46,15 +46,22 @@
 - add Server-Sent Events endpoint for frontend websocket-like real-time updates of migration execution
 - fix SSE stream by setting named Firestore database (`migration-poc`), adding SSE response headers, and disabling Nginx proxy buffering
 
-### 
+### 07.10
+
+- fix SSE
+- fix leftover placeholder groups on newly created boards by setting `empty: true` and cleaning up default groups after group migration
 
 TODO:
+
 - TEST MIGRATION PHASE
-> boards need to be created in right workspace, params need to be taken into account
-> look at DAG in storage if it has the right info
+  > boards need to be created in right workspace, params need to be taken into account
+  > look at DAG in storage if it has the right info
 - Explore MCP
 - Add OIDC token check to task handler
 - Fix tests
 - Document tests and remove bloat
 - Move from background tasks locally to container-centered approach reproducing production env architecture
 - Add estimated discovery time in UI
+
+
+Board ownerships

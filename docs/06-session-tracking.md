@@ -221,24 +221,29 @@
 ## 2026-09-06 - Layered Architecture Refactor
 
 **Decisions Made:**
+
 - **Layered Architecture:** Reorganized into src/api, src/domain, src/services, and src/infrastructure.
 - **Service Naming:** Renamed *Engine to *Service.
 
 **Current State:**
+
 - Refactored entire codebase and tests.
 - Updated docs.
 - All tests pass.
 
 **Next Up:**
+
 - Phase 4 (Reporting & Ops).
 
 ## 2026-09-06 - Real-Time UI Tracking via Firestore
 
 **Decisions Made:**
-- **Real-Time UI Tracking:** Instead of querying BigQuery for real-time progress, which is slow and expensive, we will enrich the existing `jobs/{job_id}/inventory/{object_id}` Firestore subcollection with real-time status fields (`migration_status`, `dest_id`, `error_message`). 
+
+- **Real-Time UI Tracking:** Instead of querying BigQuery for real-time progress, which is slow and expensive, we will enrich the existing `jobs/{job_id}/inventory/{object_id}` Firestore subcollection with real-time status fields (`migration_status`, `dest_id`, `error_message`).
 - **Firestore over BigQuery for UI:** The frontend will use Firestore `onSnapshot` listeners to subscribe to these inventory document changes, providing a visually responsive real-time dashboard without complex joins.
 
 **Current State:**
+
 - Updated `docs/04-data-models-and-schemas.md` to include UI tracking fields (`migration_status`, `dest_id`, `error_message`, `updated_at`) in the `inventory` schema.
 - Added `update_inventory_status` to `StateManager` in `src/infrastructure/state/firestore.py`.
 - Updated the FastAPI worker endpoint in `src/api/routers/workers.py` to invoke `update_inventory_status` throughout the execution lifecycle (`processing`, `success`, `error`, `pending` [on rate limit/transient error]).
@@ -250,6 +255,7 @@
 - Added CSS styles for progress table and connection status badges.
 
 **Next Up:**
+
 - Continue Phase 4 Reporting (BigQuery schema generation).
 
 ## 2026-09-06 - Bug Fixes: gRPC Fork Deadlock in SSE Endpoint
@@ -303,6 +309,10 @@
   - Added anti-buffering response headers (`Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`) to `StreamingResponse`.
   - Added `proxy_buffering off;`, `proxy_cache off;`, and `proxy_http_version 1.1;` to Nginx API reverse proxy configuration in `frontend/nginx.conf.template`.
   - Added test coverage in `tests/api/test_sse_stream.py`.
+- **Default Group Cleanup on Board Creation:**
+  - Configured `empty: true` in `create_board` to eliminate default boilerplate columns.
+  - Captured initial default group IDs returned by `create_board` in the job state manager.
+  - Added `_cleanup_default_groups` invoked in `create_group` to delete Monday's default placeholder groups after the first source group is created on the destination board.
 
 **Current State:**
 
