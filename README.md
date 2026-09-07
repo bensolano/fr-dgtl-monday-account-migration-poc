@@ -63,6 +63,14 @@ Run the following script from the root directory:
 
 Once running, open [http://localhost:5173](http://localhost:5173) in your browser to enter your API keys and generate a report.
 
+### Tasks tunnel
+
+In order for the execution to work locally, you'll need to tunnel fastAPI local running port and set the SERVICE_URL en var as the tunnel URL so that Cloud Tasks can reach your backend. Example with ngrok:
+
+````
+ngrok http 8000
+````
+
 ## Deployment
 
 We strictly separate **Infrastructure Provisioning** (Terraform) from **Application Deployment** (Cloud Build).

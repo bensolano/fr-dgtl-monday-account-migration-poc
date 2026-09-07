@@ -41,10 +41,14 @@
 ### 6.10
 
 - add database var to config.py and firestoreclient
+- refactor codebase tree structure
+- include UI tracking fields (`migration_status`, `dest_id`, `error_message`, `updated_at`) in the `inventory` schema and update fields during execution
+- add Server-Sent Events endpoint for frontend websocket-like real-time updates of migration execution
 
 TODO:
 - TEST MIGRATION PHASE
-- Add reporting in UI
+> boards need to be created in right workspace, params need to be taken into account
+> look at DAG in storage if it has the right info
 - Add OIDC token check to task handler
 - Fix tests
 - Document tests and remove bloat
